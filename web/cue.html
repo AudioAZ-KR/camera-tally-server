@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>AudioAZ 큐 라이트</title>
+<link rel="stylesheet" href="/theme.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+  #setup { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; padding: 24px; }
+  #setup h1 { font-size: 28px; margin-bottom: 8px; }
+  #setup label { width: 100%; max-width: 320px; font-size: 14px; color: var(--muted); }
+  #setup img { height: 36px; margin-bottom: 4px; }
+  #setup input { width: 100%; margin-top: 6px; font-size: 22px; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); text-align: center; }
+  #setup button#go { width: 100%; max-width: 320px; font-size: 20px; padding: 16px; border-radius: 10px; border: 0; background: var(--brand); color: #fff; font-weight: bold; }
+  .langsel { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 12px; font-weight: bold; cursor: pointer; }
+  #setup .langsel { position: absolute; top: calc(env(safe-area-inset-top) + 12px); right: 16px; }
+
+  /* ===== 큐 라이트 화면: 전체가 라이트 ===== */
+  #cue { display: none; height: 100%; flex-direction: column; }
+  #light { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+           padding-top: env(safe-area-inset-top); transition: background .1s; -webkit-tap-highlight-color: transparent; }
+  #cue.off  #light { background: #1a2538; }
+  #cue.stby #light { background: var(--tally-pgm); }
+  #cue.go   #light { background: var(--tally-pvw); }
+  #cue.dead #light { background: var(--tally-off); }
+  #cue.stby.flash #light { animation: cueflash .5s step-start infinite; }
+  @keyframes cueflash { 50% { background: #4a0300; } }
+  #light .ch { font-size: min(16vh, 22vw); font-weight: 900; line-height: 1; letter-spacing: .04em; }
+  #light .status { font-size: min(9vh, 15vw); font-weight: 900; letter-spacing: .14em; }
+  #light .hint { font-size: min(3.2vh, 5.5vw); font-weight: 700; opacity: .85; min-height: 1.4em; }
+  #cue.off #light .ch { color: var(--muted); }
+
+  .foot { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted);
+          background: var(--bg); border-top: 1px solid var(--border);
+          padding: 8px 14px calc(env(safe-area-inset-bottom) + 8px); }
+  .foot img { height: 14px; opacity: .8; vertical-align: middle; margin-right: 6px; }
+  .foot button { background: none; border: 1px solid var(--border); color: var(--muted); padding: 4px 10px; border-radius: 6px; font-size: 12px; }
+  .foot .langsel { margin-right: 6px; }
+</style>
+</head>
+<body>
+<div id="setup">
+  <select class="langsel" aria-label="Language"></select>
+  <img src="/logo.svg" alt="AudioAZ" onerror="this.remove()">
+  <h1 id="lblTitle">무대 큐 라이트</h1>
+  <label><span id="lblRoom">방 코드</span><input id="room" placeholder="STAGE" autocapitalize="characters"></label>
+  <label><span id="lblCh">내 포지션 (채널)</span><input id="ch" placeholder="LX" autocapitalize="characters"></label>
+  <button id="go">접속</button>
+</div>
+
+<div id="cue" class="dead">
+  <div id="light">
+    <div class="ch" id="myCh">LX</div>
+    <div class="status" id="status">연결 중</div>
+    <div class="hint" id="hint"></div>
+  </div>
+  <div class="foot">
+    <span><img src="/logo.svg" alt="" onerror="this.remove()"><span id="conn">서버 연결 중…</span></span>
+    <span><select class="langsel" aria-label="Language"></select><button id="leave">설정</button></span>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const qs = new URLSearchParams(location.search);
+
+// ===== 다국어 (8개 언어) — STANDBY / GO / ACK 는 공연 공용 표기라 공통 =====
+const LANGS = [['en','English'],['ko','한국어'],['ja','日本語'],['zh','中文'],['es','Español'],['fr','Français'],['de','Deutsch'],['it','Italiano']];
+const I18N = {
+  ko: { title:'무대 큐 라이트', room:'방 코드', ch:'내 포지션 (채널)', connect:'접속',
+        connecting:'연결 중', wait:'대기', tapAck:'화면을 탭하여 확인', acked:'확인됨 ✓',
+        disconnected:'연결 끊김', opOff:'오퍼레이터 오프라인', reconnecting:'재연결 중…',
+        settings:'설정', roomWord:'방', connectedWord:'연결됨', connServer:'서버 연결 중…' },
+  en: { title:'Stage Cue Light', room:'Room Code', ch:'My Position (Channel)', connect:'Connect',
+        connecting:'Connecting', wait:'WAIT', tapAck:'Tap screen to acknowledge', acked:'Acknowledged ✓',
+        disconnected:'Disconnected', opOff:'Operator Offline', reconnecting:'Reconnecting…',
+        settings:'Setup', roomWord:'Room', connectedWord:'Connected', connServer:'Connecting…' },
+  ja: { title:'ステージ キューライト', room:'ルームコード', ch:'自分のポジション（チャンネル）', connect:'接続',
+        connecting:'接続中', wait:'待機', tapAck:'画面をタップして確認', acked:'確認済み ✓',
+        disconnected:'接続が切れました', opOff:'オペレーター オフライン', reconnecting:'再接続中…',
+        settings:'設定', roomWord:'ルーム', connectedWord:'接続済み', connServer:'サーバー接続中…' },
+  zh: { title:'舞台提示灯', room:'房间代码', ch:'我的岗位（通道）', connect:'连接',
+        connecting:'连接中', wait:'待机', tapAck:'点击屏幕确认', acked:'已确认 ✓',
+        disconnected:'连接断开', opOff:'操作员离线', reconnecting:'重新连接中…',
+        settings:'设置', roomWord:'房间', connectedWord:'已连接', connServer:'连接服务器中…' },
+  es: { title:'Luz de Aviso Escénica', room:'Código de Sala', ch:'Mi posición (canal)', connect:'Conectar',
+        connecting:'Conectando', wait:'ESPERA', tapAck:'Toca la pantalla para confirmar', acked:'Confirmado ✓',
+        disconnected:'Desconectado', opOff:'Operador sin conexión', reconnecting:'Reconectando…',
+        settings:'Configuración', roomWord:'Sala', connectedWord:'Conectado', connServer:'Conectando…' },
+  fr: { title:'Feu de Conduite Scène', room:'Code de salle', ch:'Mon poste (canal)', connect:'Connexion',
+        connecting:'Connexion…', wait:'ATTENTE', tapAck:'Touchez l’écran pour confirmer', acked:'Confirmé ✓',
+        disconnected:'Déconnecté', opOff:'Opérateur hors ligne', reconnecting:'Reconnexion…',
+        settings:'Réglages', roomWord:'Salle', connectedWord:'Connecté', connServer:'Connexion…' },
+  de: { title:'Bühnen-Cue-Licht', room:'Raumcode', ch:'Meine Position (Kanal)', connect:'Verbinden',
+        connecting:'Verbinden…', wait:'WARTEN', tapAck:'Bildschirm tippen zum Bestätigen', acked:'Bestätigt ✓',
+        disconnected:'Getrennt', opOff:'Operator offline', reconnecting:'Neu verbinden…',
+        settings:'Einrichtung', roomWord:'Raum', connectedWord:'Verbunden', connServer:'Verbinden…' },
+  it: { title:'Luce di Cue Palco', room:'Codice sala', ch:'La mia posizione (canale)', connect:'Connetti',
+        connecting:'Connessione…', wait:'ATTESA', tapAck:'Tocca lo schermo per confermare', acked:'Confermato ✓',
+        disconnected:'Disconnesso', opOff:'Operatore offline', reconnecting:'Riconnessione…',
+        settings:'Impostazioni', roomWord:'Sala', connectedWord:'Connesso', connServer:'Connessione…' }
+};
+function detectLang() {
+  if (I18N[localStorage.lang]) return localStorage.lang;
+  const sys = ((navigator.languages && navigator.languages[0]) || navigator.language || 'en').toLowerCase();
+  const base = sys.split('-')[0];
+  return I18N[base] ? base : 'en';
+}
+let lang = detectLang();
+const t = k => I18N[lang][k];
+
+$('room').value = qs.get('room') || localStorage.cueRoom || '';
+$('ch').value   = qs.get('ch')   || localStorage.cueCh   || '';
+let ws, room, ch, wakeLock, pingTimer, manualClose = false;
+let cur = null;          // 서버가 보낸 내 채널 상태 {state, ack, ts}
+let opOnline = false, connected = false;
+let ackTs = 0;           // 내가 로컬에서 확인(탭)한 standby 의 ts
+
+function applyLang() {
+  document.documentElement.lang = lang;
+  $('lblTitle').textContent = t('title');
+  $('lblRoom').textContent = t('room');
+  $('lblCh').textContent = t('ch');
+  $('go').textContent = t('connect');
+  $('leave').textContent = t('settings');
+  renderLangSel(); render(); renderConn();
+}
+function setLang(l) { lang = l; localStorage.lang = l; applyLang(); }
+function renderLangSel() {
+  document.querySelectorAll('.langsel').forEach(sel => {
+    if (!sel.options.length) sel.innerHTML = LANGS.map(([c, n]) => `<option value="${c}">${n}</option>`).join('');
+    sel.value = lang;
+  });
+}
+document.querySelectorAll('.langsel').forEach(sel => sel.onchange = () => setLang(sel.value));
+
+function renderConn() {
+  $('conn').textContent = connected ? `${t('roomWord')} ${room} · ${ch} · ${t('connectedWord')}` : t('connServer');
+}
+
+// ===== 표시: 연결/오퍼레이터 상태가 안전 최우선 (불확실하면 무조건 회색) =====
+function render() {
+  const cueEl = $('cue');
+  if (!connected)      { cueEl.className = 'dead'; $('status').textContent = t('disconnected'); $('hint').textContent = ''; return; }
+  if (!opOnline)       { cueEl.className = 'dead'; $('status').textContent = t('opOff'); $('hint').textContent = ''; return; }
+  const st = cur ? cur.state : 'off';
+  if (st === 'standby') {
+    const acked = ackTs === cur.ts;
+    cueEl.className = 'stby' + (acked ? '' : ' flash');
+    $('status').textContent = 'STANDBY';
+    $('hint').textContent = acked ? t('acked') : t('tapAck');
+  } else if (st === 'go') {
+    cueEl.className = 'go'; $('status').textContent = 'GO'; $('hint').textContent = '';
+  } else {
+    cueEl.className = 'off'; $('status').textContent = t('wait'); $('hint').textContent = '';
+  }
+}
+
+let lastKey = '';   // 상태 변화 감지용 (진동은 변화 시 1회만)
+function onState(d) {
+  opOnline = !!d.op_online;
+  const prev = cur;
+  cur = (d.channels || {})[ch] || null;
+  const key = cur ? cur.state + ':' + cur.ts : 'off';
+  if (key !== lastKey) {
+    if (cur && cur.state === 'standby') navigator.vibrate?.([200, 100, 200]);
+    else if (cur && cur.state === 'go' && prev) navigator.vibrate?.(400);
+    lastKey = key;
+  }
+  render();
+}
+
+$('light').addEventListener('click', () => {
+  if (cur && cur.state === 'standby' && ackTs !== cur.ts) {
+    ackTs = cur.ts;
+    try { ws?.readyState === 1 && ws.send('{"type":"cue_ack"}'); } catch {}
+    navigator.vibrate?.(60);
+    render();
+  }
+});
+
+$('go').onclick = () => {
+  room = $('room').value.trim().toUpperCase() || 'DEFAULT';
+  ch   = ($('ch').value.trim().toUpperCase() || 'CUE').slice(0, 24);
+  localStorage.cueRoom = room; localStorage.cueCh = ch;
+  $('setup').style.display = 'none'; $('cue').style.display = 'flex';
+  $('myCh').textContent = ch;
+  connect(); keepAwake();
+  document.documentElement.requestFullscreen?.().catch(()=>{});
+};
+function sayLeave() { try { if (ws && ws.readyState === 1) ws.send('{"type":"leave"}'); } catch {} }
+$('leave').onclick = () => { sayLeave(); manualClose = true; ws?.close(); clearInterval(pingTimer); $('cue').style.display='none'; $('setup').style.display='flex'; };
+addEventListener('pagehide', sayLeave); addEventListener('beforeunload', sayLeave);
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({type:'join', role:'cue', room, ch}));
+    connected = true; renderConn(); render();
+    pingTimer = setInterval(() => ws.readyState === 1 && ws.send('{"type":"ping"}'), 8000);
+  };
+  ws.onmessage = e => { const d = JSON.parse(e.data); if (d.type === 'cue_state') onState(d); };
+  ws.onclose = () => {
+    clearInterval(pingTimer); connected = false;
+    if (manualClose) { manualClose = false; return; }
+    render(); $('conn').textContent = t('reconnecting');
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => ws.close();
+}
+async function keepAwake() {
+  try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); if (ws && ws.readyState !== 1 && $('cue').style.display === 'flex') connect(); } });
+}
+applyLang();
+if ($('room').value && $('ch').value && qs.get('auto')) $('go').click();
+</script>
+</body>
+</html>

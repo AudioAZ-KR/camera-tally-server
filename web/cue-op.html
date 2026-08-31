@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>AudioAZ 큐 라이트 콘솔</title>
+<link rel="stylesheet" href="/theme.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); padding: 20px 16px calc(env(safe-area-inset-bottom) + 20px); max-width: 640px; margin: 0 auto; line-height: 1.5; }
+  h1 { font-size: 24px; margin: 12px 0 4px; }
+  p.sub { color: var(--muted); margin-bottom: 22px; font-size: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; margin-bottom: 10px; }
+  input { font-size: 18px; padding: 11px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); text-align: center; }
+  input:disabled { opacity: .5; }
+  button { font-size: 15px; padding: 12px; border-radius: 10px; border: 0; background: var(--brand); color: #fff; font-weight: bold; cursor: pointer; }
+  button.sec { background: var(--border); color: var(--text); }
+  button:disabled { opacity: .4; cursor: default; }
+  .langsel { position: absolute; top: 14px; right: 16px; width: auto; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 12px; font-weight: bold; cursor: pointer; }
+  small { color: var(--muted); }
+  #console { display: none; }
+
+  #setup input { width: 100%; margin: 6px 0 12px; }
+  #setup button { width: 100%; }
+  #setup .genrow { display: flex; gap: 8px; } #setup .genrow button { flex: 1; }
+
+  .code { font-size: 34px; font-weight: 900; letter-spacing: .12em; color: var(--brand); }
+  .tophead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  #connBadge { font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 999px; background: var(--border); color: var(--muted); white-space: nowrap; }
+  #connBadge.on { background: #0a3d22; color: #4ade80; }
+
+  /* 채널 행 */
+  .chrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+           background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 8px 0; }
+  .chrow .meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .chrow .name { font-size: 19px; font-weight: 900; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chrow .cnt { font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 999px; background: var(--border); color: var(--muted); white-space: nowrap; }
+  .chrow .cnt.on { background: #0a3d22; color: #4ade80; }
+  .chrow .pill { font-size: 12px; font-weight: 900; letter-spacing: .06em; padding: 3px 10px; border-radius: 999px; background: var(--border); color: var(--muted); white-space: nowrap; }
+  .chrow .pill.stby { background: var(--tally-pgm); color: #fff; }
+  .chrow .pill.go { background: var(--tally-pvw); color: #fff; }
+  .chrow .btns { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; }
+  .chrow .btns button { padding: 12px 0; font-size: 15px; letter-spacing: .06em; }
+  .bStby { background: #5a1210; color: #ffb4b0; } .bStby.act { background: var(--tally-pgm); color: #fff; }
+  .bGo   { background: #0c3d26; color: #9ff0c3; } .bGo.act   { background: var(--tally-pvw); color: #fff; }
+  .bOff  { background: var(--border); color: var(--text); }
+  .bDel  { background: none; border: 1px solid var(--border); color: var(--muted); width: 42px; font-size: 16px; }
+
+  .allrow { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 12px; }
+  .allrow button { padding: 13px 0; letter-spacing: .06em; }
+
+  .addrow { display: flex; gap: 8px; margin-top: 12px; }
+  .addrow input { flex: 1; text-align: left; font-size: 15px; padding: 10px 12px; }
+  .addrow button { width: 90px; }
+
+  .links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .links a { display: block; text-align: center; padding: 10px 0; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: #fff; text-decoration: none; font-weight: bold; font-size: 14px; }
+</style>
+</head>
+<body>
+<select class="langsel" aria-label="Language"></select>
+<div class="brand-bar"><img src="/logo.svg" alt="AudioAZ" onerror="this.remove()"><span class="tag">Cue Light</span></div>
+<h1 id="lblTitle">무대 큐 라이트 콘솔</h1>
+<p class="sub" id="lblSub">채널별 STANDBY / GO를 스태프 스마트폰에 표시합니다</p>
+
+<div id="setup">
+  <div class="card">
+    <h2 id="lblRoomTitle">방 코드</h2>
+    <input id="room" placeholder="STAGE" autocapitalize="characters">
+    <div class="genrow">
+      <button class="sec" id="gen">코드 생성</button>
+      <button id="start">콘솔 시작</button>
+    </div>
+  </div>
+</div>
+
+<div id="console">
+  <div class="card">
+    <div class="tophead"><span class="code" id="code"></span><span id="connBadge">…</span></div>
+    <small id="lblShare">수신자에게 방 코드를 알려주거나 아래 링크를 공유하세요.</small>
+    <div class="links" id="links"></div>
+  </div>
+
+  <div class="card">
+    <h2 id="lblChTitle">채널</h2>
+    <div id="chList"></div>
+    <div class="allrow">
+      <button class="bStby" id="allStby">ALL STBY</button>
+      <button class="bGo" id="allGo">ALL GO</button>
+      <button class="bOff" id="allOff" style="background:var(--border);color:var(--text)">ALL OFF</button>
+    </div>
+    <div class="addrow">
+      <input id="newCh" placeholder="채널 추가 (예: FLY)" autocapitalize="characters" maxlength="24">
+      <button class="sec" id="addCh">추가</button>
+    </div>
+  </div>
+  <button class="sec" id="back" style="width:100%" >처음으로</button>
+</div>
+
+<div class="brand-foot">Powered by <b>AudioAZ</b> &nbsp;·&nbsp; Made in Korea 🇰🇷</div>
+<script>
+const $ = id => document.getElementById(id);
+const qs = new URLSearchParams(location.search);
+
+// ===== 다국어 (8개 언어) — STANDBY/GO/ALL/CUE 등 공연 공용 표기는 공통 =====
+const LANGS = [['en','English'],['ko','한국어'],['ja','日本語'],['zh','中文'],['es','Español'],['fr','Français'],['de','Deutsch'],['it','Italiano']];
+const I18N = {
+  ko: { title:'무대 큐 라이트 콘솔', sub:'채널별 STANDBY / GO를 스태프 스마트폰에 표시합니다',
+        roomTitle:'방 코드', gen:'코드 생성', start:'콘솔 시작',
+        share:'수신자에게 방 코드를 알려주거나 아래 링크를 공유하세요.', chTitle:'채널',
+        addPh:'채널 추가 (예: FLY)', add:'추가', back:'처음으로', needRoom:'방 코드를 입력하세요',
+        connected:'연결됨', connecting:'연결 중…', reconnecting:'재연결 중…',
+        waitAck:'응답 대기', acked:'확인 ✓', devices:'대' },
+  en: { title:'Stage Cue Light Console', sub:'Send per-channel STANDBY / GO to crew smartphones',
+        roomTitle:'Room Code', gen:'Generate', start:'Start console',
+        share:'Share the room code or the links below with receivers.', chTitle:'Channels',
+        addPh:'Add channel (e.g. FLY)', add:'Add', back:'Back to start', needRoom:'Enter a room code',
+        connected:'Connected', connecting:'Connecting…', reconnecting:'Reconnecting…',
+        waitAck:'awaiting ack', acked:'ACK ✓', devices:'' },
+  ja: { title:'ステージ キューライト コンソール', sub:'チャンネルごとの STANDBY / GO をスタッフのスマホに表示',
+        roomTitle:'ルームコード', gen:'コード生成', start:'コンソール開始',
+        share:'受信者にルームコードか下のリンクを共有してください。', chTitle:'チャンネル',
+        addPh:'チャンネル追加（例: FLY）', add:'追加', back:'最初に戻る', needRoom:'ルームコードを入力してください',
+        connected:'接続済み', connecting:'接続中…', reconnecting:'再接続中…',
+        waitAck:'応答待ち', acked:'確認 ✓', devices:'台' },
+  zh: { title:'舞台提示灯控制台', sub:'向工作人员手机发送各通道的 STANDBY / GO',
+        roomTitle:'房间代码', gen:'生成代码', start:'启动控制台',
+        share:'把房间代码或下方链接分享给接收者。', chTitle:'通道',
+        addPh:'添加通道（例: FLY）', add:'添加', back:'返回首页', needRoom:'请输入房间代码',
+        connected:'已连接', connecting:'连接中…', reconnecting:'重新连接中…',
+        waitAck:'等待确认', acked:'已确认 ✓', devices:'台' },
+  es: { title:'Consola de Luz de Aviso', sub:'Envía STANDBY / GO por canal a los móviles del equipo',
+        roomTitle:'Código de Sala', gen:'Generar', start:'Iniciar consola',
+        share:'Comparte el código de sala o los enlaces de abajo.', chTitle:'Canales',
+        addPh:'Añadir canal (ej. FLY)', add:'Añadir', back:'Volver al inicio', needRoom:'Introduce un código de sala',
+        connected:'Conectado', connecting:'Conectando…', reconnecting:'Reconectando…',
+        waitAck:'esperando conf.', acked:'CONF ✓', devices:'' },
+  fr: { title:'Console Feux de Conduite', sub:'Envoie STANDBY / GO par canal aux smartphones de l’équipe',
+        roomTitle:'Code de salle', gen:'Générer', start:'Démarrer la console',
+        share:'Partagez le code de salle ou les liens ci-dessous.', chTitle:'Canaux',
+        addPh:'Ajouter un canal (ex. FLY)', add:'Ajouter', back:'Retour au début', needRoom:'Saisissez un code de salle',
+        connected:'Connecté', connecting:'Connexion…', reconnecting:'Reconnexion…',
+        waitAck:'attente conf.', acked:'CONF ✓', devices:'' },
+  de: { title:'Bühnen-Cue-Licht-Konsole', sub:'Sendet STANDBY / GO pro Kanal an Crew-Smartphones',
+        roomTitle:'Raumcode', gen:'Generieren', start:'Konsole starten',
+        share:'Teile den Raumcode oder die Links unten mit den Empfängern.', chTitle:'Kanäle',
+        addPh:'Kanal hinzufügen (z. B. FLY)', add:'Hinzufügen', back:'Zurück zum Start', needRoom:'Gib einen Raumcode ein',
+        connected:'Verbunden', connecting:'Verbinden…', reconnecting:'Neu verbinden…',
+        waitAck:'warte auf ACK', acked:'ACK ✓', devices:'' },
+  it: { title:'Console Luci di Cue', sub:'Invia STANDBY / GO per canale agli smartphone della crew',
+        roomTitle:'Codice sala', gen:'Genera', start:'Avvia console',
+        share:'Condividi il codice sala o i link qui sotto.', chTitle:'Canali',
+        addPh:'Aggiungi canale (es. FLY)', add:'Aggiungi', back:'Torna all’inizio', needRoom:'Inserisci un codice sala',
+        connected:'Connesso', connecting:'Connessione…', reconnecting:'Riconnessione…',
+        waitAck:'attesa conferma', acked:'CONF ✓', devices:'' }
+};
+function detectLang() {
+  if (I18N[localStorage.lang]) return localStorage.lang;
+  const sys = ((navigator.languages && navigator.languages[0]) || navigator.language || 'en').toLowerCase();
+  const base = sys.split('-')[0];
+  return I18N[base] ? base : 'en';
+}
+let lang = detectLang();
+const t = k => I18N[lang][k];
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.title = t('title');
+  $('lblTitle').textContent = t('title');
+  $('lblSub').textContent = t('sub');
+  $('lblRoomTitle').textContent = t('roomTitle');
+  $('gen').textContent = t('gen');
+  $('start').textContent = t('start');
+  $('lblShare').textContent = t('share');
+  $('lblChTitle').textContent = t('chTitle');
+  $('newCh').placeholder = t('addPh');
+  $('addCh').textContent = t('add');
+  $('back').textContent = t('back');
+  renderLangSel(); renderConnBadge(); renderChannels();
+}
+function setLang(l) { lang = l; localStorage.lang = l; applyLang(); }
+function renderLangSel() {
+  document.querySelectorAll('.langsel').forEach(sel => {
+    if (!sel.options.length) sel.innerHTML = LANGS.map(([c, n]) => `<option value="${c}">${n}</option>`).join('');
+    sel.value = lang;
+  });
+}
+document.querySelectorAll('.langsel').forEach(sel => sel.onchange = () => setLang(sel.value));
+
+// ===== 상태 =====
+let ws, room, pingTimer, connected = false, manualClose = false;
+let channels = [];                       // 오퍼레이터가 관리하는 채널 목록 (localStorage)
+let srvState = {};                       // 서버 채널 상태 {ch:{state,ack,ts}}
+let counts = {};                         // 채널별 접속 수신기 수
+try { channels = JSON.parse(localStorage.cueChannels || '[]'); } catch {}
+if (!channels.length) channels = ['LX', 'SND', 'VID', 'STAGE'];
+
+function saveChannels() { localStorage.cueChannels = JSON.stringify(channels); }
+function renderConnBadge() {
+  const b = $('connBadge');
+  b.textContent = connected ? t('connected') : t('connecting');
+  b.className = connected ? 'on' : '';
+}
+function renderLinks() {
+  $('links').innerHTML = channels.map(c =>
+    `<a href="/cue.html?room=${encodeURIComponent(room)}&ch=${encodeURIComponent(c)}&auto=1" target="_blank">${c}</a>`).join('');
+}
+function renderChannels() {
+  if (!room) return;
+  $('chList').innerHTML = channels.map(c => {
+    const s = srvState[c] || { state: 'off', ack: false };
+    const n = counts[c] || 0;
+    const pill = s.state === 'standby' ? `<span class="pill stby">STBY ${s.ack ? t('acked') : '· ' + t('waitAck')}</span>`
+               : s.state === 'go' ? '<span class="pill go">GO</span>'
+               : '<span class="pill">OFF</span>';
+    return `<div class="chrow" data-ch="${c}">
+      <div class="meta"><span class="name">${c}</span><span class="cnt${n ? ' on' : ''}">${n}${t('devices') || '×'}</span></div>
+      ${pill}
+      <div class="btns">
+        <button class="bStby${s.state === 'standby' ? ' act' : ''}" data-st="standby">STBY</button>
+        <button class="bGo${s.state === 'go' ? ' act' : ''}" data-st="go">GO</button>
+        <button class="bOff" data-st="off">OFF</button>
+        <button class="bDel" data-del="1">×</button>
+      </div>
+    </div>`;
+  }).join('');
+  renderLinks();
+}
+$('chList').addEventListener('click', e => {
+  const row = e.target.closest('.chrow'); if (!row) return;
+  const c = row.dataset.ch;
+  if (e.target.dataset.del) {
+    channels = channels.filter(x => x !== c); saveChannels();
+    send({ type: 'cue_remove', ch: c });
+    delete srvState[c]; renderChannels(); return;
+  }
+  const st = e.target.dataset.st;
+  if (st) send({ type: 'cue', ch: c, state: st });
+});
+$('allStby').onclick = () => send({ type: 'cue_all', channels, state: 'standby' });
+$('allGo').onclick   = () => send({ type: 'cue_all', channels, state: 'go' });
+$('allOff').onclick  = () => send({ type: 'cue_all', channels, state: 'off' });
+$('addCh').onclick = () => {
+  const c = $('newCh').value.trim().toUpperCase().slice(0, 24);
+  if (!c || channels.includes(c)) { $('newCh').value = ''; return; }
+  channels.push(c); saveChannels(); $('newCh').value = '';
+  renderChannels();
+};
+$('newCh').addEventListener('keydown', e => { if (e.key === 'Enter') $('addCh').click(); });
+
+function send(obj) { try { ws?.readyState === 1 && ws.send(JSON.stringify(obj)); } catch {} }
+
+$('gen').onclick = () => {
+  $('room').value = Array.from({length: 6}, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*32)]).join('');
+};
+$('start').onclick = () => {
+  room = $('room').value.trim().toUpperCase();
+  if (!room) return alert(t('needRoom'));
+  localStorage.cueOpRoom = room;
+  $('setup').style.display = 'none'; $('console').style.display = 'block';
+  $('code').textContent = room;
+  history.replaceState(null, '', '?room=' + room);
+  renderChannels(); connect(); keepAwake();
+};
+$('back').onclick = () => {
+  manualClose = true; try { ws?.close(); } catch {} clearInterval(pingTimer);
+  connected = false; history.replaceState(null, '', location.pathname);
+  $('console').style.display = 'none'; $('setup').style.display = 'block';
+};
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'join', role: 'cueop', room }));
+    connected = true; renderConnBadge();
+    pingTimer = setInterval(() => ws.readyState === 1 && ws.send('{"type":"ping"}'), 8000);
+  };
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'cue_state') {
+      srvState = d.channels || {};
+      // 서버에만 있는 채널(다른 콘솔이 만든 것)도 목록에 반영
+      for (const c of Object.keys(srvState)) if (!channels.includes(c)) channels.push(c);
+      saveChannels(); renderChannels();
+    } else if (d.type === 'cue_roster') {
+      counts = d.channels || {};
+      for (const c of Object.keys(counts)) if (!channels.includes(c)) channels.push(c);
+      saveChannels(); renderChannels();
+    }
+  };
+  ws.onclose = () => {
+    clearInterval(pingTimer); connected = false;
+    if (manualClose) { manualClose = false; return; }
+    renderConnBadge(); $('connBadge').textContent = t('reconnecting');
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => ws.close();
+}
+let wakeLock;
+async function keepAwake() {
+  try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); if (ws && ws.readyState !== 1 && $('console').style.display === 'block') connect(); } });
+}
+
+applyLang();
+$('room').value = qs.get('room') || localStorage.cueOpRoom || '';
+if (qs.get('room')) $('start').click();
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+/* ===== AudioAZ 브랜드 테마 =====
+   로고: web/logo.svg (가로형), web/logo-mark.svg (심볼) — 원본 iCloud/오디오에이지/일러스트/*.ai에서 추출
+   색상: 아래 변수만 바꾸면 전체 페이지에 적용됨 */
+:root {
+  --brand:        #1877F2;   /* AudioAZ 브랜드 블루 (로고에서 추출) */
+  --brand-dark:   #0F5FCC;
+  --bg:           #0A1628;   /* 페이지 배경 (다크 네이비) */
+  --surface:      #12213A;   /* 카드 배경 */
+  --border:       #1F3254;
+  --text:         #EAF2FF;
+  --muted:        #8DA4C8;
+  --tally-pgm:    #E10600;   /* ON AIR */
+  --tally-pvw:    #00A651;   /* PREVIEW */
+  --tally-idle:   #0A1628;
+  --tally-off:    #3A4356;
+  --font: "Pretendard", -apple-system, "Apple SD Gothic Neo", system-ui, sans-serif;
+}
+.brand-bar { display: flex; align-items: center; gap: 10px; padding: 4px 0 18px; }
+.brand-bar img { height: 32px; width: auto; }
+.brand-bar .wordmark { font-weight: 900; letter-spacing: .06em; font-size: 18px; color: var(--text); }
+.brand-bar .wordmark b { color: var(--brand); }
+.brand-bar .tag { margin-left: auto; font-size: 11px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+.brand-foot { margin-top: 28px; text-align: center; font-size: 12px; color: var(--muted); }
+.brand-foot b { color: var(--brand); }
