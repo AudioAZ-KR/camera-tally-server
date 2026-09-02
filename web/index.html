@@ -3,35 +3,37 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AudioAZ Camera Tally</title>
+<title>Flare Tally</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/theme.css">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--font); padding: 24px; max-width: 560px; margin: 0 auto; line-height: 1.5; }
   h1 { font-size: 26px; margin: 16px 0 4px; }
   p.sub { color: var(--muted); margin-bottom: 28px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 18px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 20px; margin-bottom: 18px; }
   .card h2 { font-size: 17px; margin-bottom: 12px; }
-  input { width: 100%; font-size: 20px; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); text-align: center; margin: 6px 0 12px; }
-  button { width: 100%; font-size: 17px; padding: 14px; border-radius: 10px; border: 0; background: var(--brand); color: #fff; font-weight: bold; cursor: pointer; }
-  button.sec { background: var(--border); color: var(--text); }
-  .code { font-size: 44px; font-weight: 900; letter-spacing: .12em; text-align: center; margin: 8px 0; color: var(--brand); }
-  pre { background: #000; border: 1px solid var(--border); padding: 12px; border-radius: 8px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 8px 0; }
+  input { width: 100%; font-size: 20px; padding: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--sunken); color: var(--text); text-align: center; margin: 6px 0 12px; }
+  button { width: 100%; font-size: 17px; padding: 14px; border-radius: 6px; border: 0; background: var(--brand); color: var(--bg); font-weight: bold; cursor: pointer; }
+  .btn-link { display:block; width:100%; text-align:center; font-size:17px; padding:14px; border-radius:6px; background:var(--brand); color:var(--bg); font-weight:bold; text-decoration:none; }
+  button.sec { background: var(--raised); color: var(--text); border: 1px solid var(--border); }
+  .code { font-size: 44px; font-weight: 700; font-family: var(--mono); letter-spacing: .08em; text-align: center; margin: 8px 0; color: var(--text); }
+  pre { background: var(--sunken); font-family: var(--mono); border: 1px solid var(--border); padding: 12px; border-radius: 4px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 8px 0; }
   ol { padding-left: 20px; color: var(--text); font-size: 14px; } ol li { margin: 6px 0; }
   .cams { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
-  .cams a { display: block; text-align: center; padding: 14px 0; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: #fff; text-decoration: none; font-weight: bold; font-size: 18px; }
+  .cams a { display: block; text-align: center; padding: 14px 0; background: var(--raised); font-family: var(--mono); border: 1px solid var(--border); border-radius: 6px; color: #fff; text-decoration: none; font-weight: bold; font-size: 18px; }
   small { color: var(--muted); }
   #roomView { display: none; }
   .row { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
   .row label { flex: 1; color: var(--muted); font-size: 14px; }
   .row span { font-size: 22px; font-weight: bold; min-width: 32px; text-align: center; }
   button.sm { width: 44px; padding: 8px 0; font-size: 20px; }
-  .langsel { position: absolute; top: 14px; right: 16px; width: auto; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 12px; font-weight: bold; cursor: pointer; }
+  .langsel { width: auto; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 12px; font-weight: bold; cursor: pointer; }
 </style>
 </head>
 <body>
-<select class="langsel" aria-label="Language"></select>
-<div class="brand-bar"><img src="/logo.svg" alt="AudioAZ" onerror="this.remove()"><span class="tag">Tally System</span></div>
+<div class="brand-bar"><img src="/logo.svg" alt="AudioAZ" onerror="this.remove()"><select class="langsel" aria-label="Language"></select></div>
 <h1 id="lblTitle">스마트폰 카메라 탈리</h1>
 <p class="sub" id="lblSub">ATEM Mini 탈리를 LTE/5G로 어디서나 스마트폰에 표시</p>
 
@@ -47,7 +49,7 @@
     <button class="sec" id="join">탈리 열기</button>
   </div>
   <div class="card">
-    <h2 id="lblCueTitle">무대 큐 라이트</h2>
+    <h2 id="lblCueTitle">Flare Cue</h2>
     <button id="cueOp">오퍼레이터 콘솔</button>
     <div style="height:8px"></div>
     <button class="sec" id="cueRecv">큐 라이트 열기 (수신)</button>
@@ -64,107 +66,93 @@
     <div class="cams" id="cams"></div>
   </div>
   <div class="card">
-    <h2 id="lblAtemTitle">ATEM 연결 (브릿지)</h2>
-    <ol>
-      <li id="lblStep1">ATEM Mini와 같은 네트워크의 PC(맥/윈도우/라즈베리파이)에서 Python 3 설치</li>
-      <li><a href="/bridge.py" download style="color:var(--brand)" id="lblDownload">bridge.py 다운로드</a></li>
-      <li id="lblStep3">터미널에서 실행:</li>
-    </ol>
-    <pre id="cmd"></pre>
-    <small id="lblAtemNote">ATEM IP는 ATEM Setup 앱에서 확인. 브릿지가 켜지면 탈리 화면이 회색→검정으로 바뀝니다.</small>
+    <h2 id="lblAtemTitle">ATEM 연결</h2>
+    <p id="lblStep1" style="color:var(--muted);font-size:14px;line-height:1.5;margin-bottom:12px">맥에 Flare Tally 앱을 설치하고 ATEM IP와 이 방 코드를 입력하면 탈리가 시작됩니다.</p>
+    <a class="btn-link" href="https://audioazpro.com/product-flare-tally.html" target="_blank" rel="noopener" id="lblDownload">Flare Tally 다운로드</a>
   </div>
   <button class="sec" id="back">처음으로</button>
 </div>
 
-<div class="brand-foot">Powered by <b>AudioAZ</b> &nbsp;·&nbsp; Made in Korea 🇰🇷</div>
 <script>
 const $ = id => document.getElementById(id);
 const base = location.origin;
 const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws';
 
-// ===== 다국어 (8개 언어) — ATEM/bridge.py/Python/PC/Wi-Fi/LTE·5G 등은 공통 =====
+// ===== 다국어 (8개 언어) =====
 const LANGS = [['en','English'],['ko','한국어'],['ja','日本語'],['zh','中文'],['es','Español'],['fr','Français'],['de','Deutsch'],['it','Italiano']];
 const I18N = {
-  ko: { pageTitle:'AudioAZ 카메라 탈리', title:'스마트폰 카메라 탈리', sub:'ATEM Mini 탈리를 LTE/5G로 어디서나 스마트폰에 표시',
-        dirTitle:'감독 — 새 방 만들기', create:'방 코드 생성',
-        opTitle:'카메라맨 — 방에 접속', joinRoom:'방 코드', joinCam:'내 카메라 번호', join:'탈리 열기',
+  ko: { pageTitle:'Flare Tally', title:'스마트폰 카메라 탈리', sub:'ATEM Mini 탈리를 LTE/5G로 어디서나 스마트폰에 표시',
+        dirTitle:'감독 · 새 방 만들기', create:'방 코드 생성',
+        opTitle:'카메라맨 · 방에 접속', joinRoom:'방 코드', joinCam:'내 카메라 번호', join:'탈리 열기',
         roomTitle:'방 코드', share:'이 코드를 카메라맨들에게 알려주세요.', cams:'카메라 수', links:'탈리 페이지 공유 링크:',
-        atemTitle:'ATEM 연결 (브릿지)',
-        step1:'ATEM Mini와 같은 네트워크의 PC(맥/윈도우/라즈베리파이)에서 Python 3 설치',
-        download:'bridge.py 다운로드', step3:'터미널에서 실행:',
-        atemNote:'ATEM IP는 ATEM Setup 앱에서 확인. 브릿지가 켜지면 탈리 화면이 회색→검정으로 바뀝니다.',
+        atemTitle:'ATEM 연결',
+        step1:'맥에 Flare Tally 앱을 설치하고 ATEM IP와 이 방 코드를 입력하면 탈리가 시작됩니다.',
+        download:'Flare Tally 다운로드',
         back:'처음으로', needInput:'방 코드와 카메라 번호를 입력하세요',
-        cueTitle:'무대 큐 라이트', cueOp:'오퍼레이터 콘솔', cueRecv:'큐 라이트 열기 (수신)' },
-  en: { pageTitle:'AudioAZ Camera Tally', title:'Smartphone Camera Tally', sub:'Show ATEM Mini tally on any smartphone over LTE/5G',
-        dirTitle:'Director — Create a room', create:'Create room code',
-        opTitle:'Camera operator — Join a room', joinRoom:'Room code', joinCam:'My camera no.', join:'Open tally',
+        cueTitle:'Flare Cue', cueOp:'오퍼레이터 콘솔', cueRecv:'큐 라이트 열기 (수신)' },
+  en: { pageTitle:'Flare Tally', title:'Smartphone Camera Tally', sub:'Show ATEM Mini tally on any smartphone over LTE/5G',
+        dirTitle:'Director · Create a room', create:'Create room code',
+        opTitle:'Camera operator · Join a room', joinRoom:'Room code', joinCam:'My camera no.', join:'Open tally',
         roomTitle:'Room code', share:'Share this code with your camera operators.', cams:'Cameras', links:'Tally page share links:',
-        atemTitle:'ATEM connection (bridge)',
-        step1:'Install Python 3 on a PC (Mac / Windows / Raspberry Pi) on the same network as the ATEM Mini',
-        download:'Download bridge.py', step3:'Run in terminal:',
-        atemNote:'Find the ATEM IP in the ATEM Setup app. When the bridge starts, the tally screen turns gray → black.',
+        atemTitle:'Connect ATEM',
+        step1:'Install the Flare Tally app on a Mac, enter your ATEM IP and this room code, and tally starts.',
+        download:'Download Flare Tally',
         back:'Back to start', needInput:'Enter a room code and camera number',
-        cueTitle:'Stage Cue Light', cueOp:'Operator console', cueRecv:'Open cue light (receiver)' },
-  ja: { pageTitle:'AudioAZ カメラタリー', title:'スマートフォン カメラタリー', sub:'ATEM Mini のタリーを LTE/5G でどこでもスマホに表示',
-        dirTitle:'ディレクター — 新しいルーム作成', create:'ルームコードを生成',
-        opTitle:'カメラマン — ルームに参加', joinRoom:'ルームコード', joinCam:'自分のカメラ番号', join:'タリーを開く',
+        cueTitle:'Flare Cue', cueOp:'Operator console', cueRecv:'Open cue light (receiver)' },
+  ja: { pageTitle:'Flare Tally', title:'スマートフォン カメラタリー', sub:'ATEM Mini のタリーを LTE/5G でどこでもスマホに表示',
+        dirTitle:'ディレクター · 新しいルーム作成', create:'ルームコードを生成',
+        opTitle:'カメラマン · ルームに参加', joinRoom:'ルームコード', joinCam:'自分のカメラ番号', join:'タリーを開く',
         roomTitle:'ルームコード', share:'このコードをカメラマンに伝えてください。', cams:'カメラ台数', links:'タリーページ共有リンク:',
-        atemTitle:'ATEM 接続（ブリッジ）',
-        step1:'ATEM Mini と同じネットワークの PC（Mac / Windows / Raspberry Pi）に Python 3 をインストール',
-        download:'bridge.py をダウンロード', step3:'ターミナルで実行:',
-        atemNote:'ATEM の IP は ATEM Setup アプリで確認。ブリッジが起動するとタリー画面がグレー→ブラックに変わります。',
+        atemTitle:'ATEM 接続',
+        step1:'Mac に Flare Tally アプリをインストールし、ATEM の IP とこのルームコードを入力するとタリーが始まります。',
+        download:'Flare Tally をダウンロード',
         back:'最初に戻る', needInput:'ルームコードとカメラ番号を入力してください',
-        cueTitle:'ステージ キューライト', cueOp:'オペレーター コンソール', cueRecv:'キューライトを開く（受信）' },
-  zh: { pageTitle:'AudioAZ 摄像机 Tally', title:'智能手机摄像机 Tally', sub:'通过 LTE/5G 随时随地在手机上显示 ATEM Mini 的 Tally',
-        dirTitle:'导播 — 创建新房间', create:'生成房间代码',
-        opTitle:'摄像师 — 加入房间', joinRoom:'房间代码', joinCam:'我的机位号', join:'打开 Tally',
+        cueTitle:'Flare Cue', cueOp:'オペレーター コンソール', cueRecv:'キューライトを開く（受信）' },
+  zh: { pageTitle:'Flare Tally', title:'智能手机摄像机 Tally', sub:'通过 LTE/5G 随时随地在手机上显示 ATEM Mini 的 Tally',
+        dirTitle:'导播 · 创建新房间', create:'生成房间代码',
+        opTitle:'摄像师 · 加入房间', joinRoom:'房间代码', joinCam:'我的机位号', join:'打开 Tally',
         roomTitle:'房间代码', share:'请把此代码告诉摄像师们。', cams:'摄像机数量', links:'Tally 页面分享链接:',
-        atemTitle:'ATEM 连接（桥接）',
-        step1:'在与 ATEM Mini 同一网络的电脑（Mac / Windows / 树莓派）上安装 Python 3',
-        download:'下载 bridge.py', step3:'在终端运行:',
-        atemNote:'ATEM 的 IP 可在 ATEM Setup 应用中查看。桥接启动后，Tally 画面会从灰色变为黑色。',
+        atemTitle:'连接 ATEM',
+        step1:'在 Mac 上安装 Flare Tally 应用，输入 ATEM IP 和此房间码即可开始 Tally。',
+        download:'下载 Flare Tally',
         back:'返回首页', needInput:'请输入房间代码和机位号',
-        cueTitle:'舞台提示灯', cueOp:'操作员控制台', cueRecv:'打开提示灯（接收）' },
-  es: { pageTitle:'AudioAZ Tally de Cámara', title:'Tally de Cámara para Smartphone', sub:'Muestra el tally de ATEM Mini en cualquier smartphone por LTE/5G',
-        dirTitle:'Director — Crear una sala', create:'Crear código de sala',
-        opTitle:'Operador de cámara — Unirse a una sala', joinRoom:'Código de sala', joinCam:'N.º de mi cámara', join:'Abrir tally',
+        cueTitle:'Flare Cue', cueOp:'操作员控制台', cueRecv:'打开提示灯（接收）' },
+  es: { pageTitle:'Flare Tally', title:'Tally de Cámara para Smartphone', sub:'Muestra el tally de ATEM Mini en cualquier smartphone por LTE/5G',
+        dirTitle:'Director · Crear una sala', create:'Crear código de sala',
+        opTitle:'Operador de cámara · Unirse a una sala', joinRoom:'Código de sala', joinCam:'N.º de mi cámara', join:'Abrir tally',
         roomTitle:'Código de sala', share:'Comparte este código con tus operadores de cámara.', cams:'Cámaras', links:'Enlaces para compartir la página de tally:',
-        atemTitle:'Conexión ATEM (puente)',
-        step1:'Instala Python 3 en un PC (Mac / Windows / Raspberry Pi) en la misma red que el ATEM Mini',
-        download:'Descargar bridge.py', step3:'Ejecuta en la terminal:',
-        atemNote:'Encuentra la IP del ATEM en la app ATEM Setup. Cuando el puente arranca, la pantalla de tally pasa de gris a negro.',
+        atemTitle:'Conectar ATEM',
+        step1:'Instala la app Flare Tally en un Mac, introduce la IP del ATEM y este código de sala, y el tally comienza.',
+        download:'Descargar Flare Tally',
         back:'Volver al inicio', needInput:'Introduce un código de sala y un número de cámara',
-        cueTitle:'Luz de Aviso Escénica', cueOp:'Consola del operador', cueRecv:'Abrir luz de aviso (receptor)' },
-  fr: { pageTitle:'AudioAZ Tally Caméra', title:'Tally Caméra pour Smartphone', sub:'Affichez le tally de l’ATEM Mini sur n’importe quel smartphone via LTE/5G',
-        dirTitle:'Réalisateur — Créer une salle', create:'Créer un code de salle',
-        opTitle:'Cadreur — Rejoindre une salle', joinRoom:'Code de salle', joinCam:'N° de ma caméra', join:'Ouvrir le tally',
+        cueTitle:'Flare Cue', cueOp:'Consola del operador', cueRecv:'Abrir luz de aviso (receptor)' },
+  fr: { pageTitle:'Flare Tally', title:'Tally Caméra pour Smartphone', sub:'Affichez le tally de l’ATEM Mini sur n’importe quel smartphone via LTE/5G',
+        dirTitle:'Réalisateur · Créer une salle', create:'Créer un code de salle',
+        opTitle:'Cadreur · Rejoindre une salle', joinRoom:'Code de salle', joinCam:'N° de ma caméra', join:'Ouvrir le tally',
         roomTitle:'Code de salle', share:'Communiquez ce code à vos cadreurs.', cams:'Caméras', links:'Liens de partage de la page tally :',
-        atemTitle:'Connexion ATEM (pont)',
-        step1:'Installez Python 3 sur un PC (Mac / Windows / Raspberry Pi) sur le même réseau que l’ATEM Mini',
-        download:'Télécharger bridge.py', step3:'Exécutez dans le terminal :',
-        atemNote:'Trouvez l’IP de l’ATEM dans l’app ATEM Setup. Quand le pont démarre, l’écran tally passe du gris au noir.',
+        atemTitle:'Connexion ATEM',
+        step1:'Installez l’app Flare Tally sur un Mac, saisissez l’IP de l’ATEM et ce code de salle : le tally démarre.',
+        download:'Télécharger Flare Tally',
         back:'Retour au début', needInput:'Saisissez un code de salle et un numéro de caméra',
-        cueTitle:'Feu de conduite scène', cueOp:'Console opérateur', cueRecv:'Ouvrir le feu (récepteur)' },
-  de: { pageTitle:'AudioAZ Kamera-Tally', title:'Smartphone Kamera-Tally', sub:'Zeige das Tally des ATEM Mini über LTE/5G auf jedem Smartphone',
-        dirTitle:'Regie — Neuen Raum erstellen', create:'Raumcode erstellen',
-        opTitle:'Kameramann — Raum beitreten', joinRoom:'Raumcode', joinCam:'Meine Kameranr.', join:'Tally öffnen',
+        cueTitle:'Flare Cue', cueOp:'Console opérateur', cueRecv:'Ouvrir le feu (récepteur)' },
+  de: { pageTitle:'Flare Tally', title:'Smartphone Kamera-Tally', sub:'Zeige das Tally des ATEM Mini über LTE/5G auf jedem Smartphone',
+        dirTitle:'Regie · Neuen Raum erstellen', create:'Raumcode erstellen',
+        opTitle:'Kameramann · Raum beitreten', joinRoom:'Raumcode', joinCam:'Meine Kameranr.', join:'Tally öffnen',
         roomTitle:'Raumcode', share:'Teile diesen Code mit deinen Kameraleuten.', cams:'Kameras', links:'Freigabelinks zur Tally-Seite:',
-        atemTitle:'ATEM-Verbindung (Bridge)',
-        step1:'Installiere Python 3 auf einem PC (Mac / Windows / Raspberry Pi) im selben Netzwerk wie der ATEM Mini',
-        download:'bridge.py herunterladen', step3:'Im Terminal ausführen:',
-        atemNote:'Die IP des ATEM findest du in der ATEM-Setup-App. Wenn die Bridge startet, wechselt der Tally-Bildschirm von Grau zu Schwarz.',
+        atemTitle:'ATEM verbinden',
+        step1:'Installiere die Flare Tally App auf einem Mac, gib die ATEM-IP und diesen Raumcode ein – das Tally startet.',
+        download:'Flare Tally herunterladen',
         back:'Zurück zum Start', needInput:'Gib einen Raumcode und eine Kameranummer ein',
-        cueTitle:'Bühnen-Cue-Licht', cueOp:'Operator-Konsole', cueRecv:'Cue-Licht öffnen (Empfänger)' },
-  it: { pageTitle:'AudioAZ Tally Telecamera', title:'Tally Telecamera per Smartphone', sub:'Mostra il tally dell’ATEM Mini su qualsiasi smartphone tramite LTE/5G',
-        dirTitle:'Regista — Crea una sala', create:'Crea codice sala',
-        opTitle:'Operatore — Entra in una sala', joinRoom:'Codice sala', joinCam:'N. mia telecamera', join:'Apri tally',
+        cueTitle:'Flare Cue', cueOp:'Operator-Konsole', cueRecv:'Cue-Licht öffnen (Empfänger)' },
+  it: { pageTitle:'Flare Tally', title:'Tally Telecamera per Smartphone', sub:'Mostra il tally dell’ATEM Mini su qualsiasi smartphone tramite LTE/5G',
+        dirTitle:'Regista · Crea una sala', create:'Crea codice sala',
+        opTitle:'Operatore · Entra in una sala', joinRoom:'Codice sala', joinCam:'N. mia telecamera', join:'Apri tally',
         roomTitle:'Codice sala', share:'Condividi questo codice con i tuoi operatori.', cams:'Telecamere', links:'Link di condivisione della pagina tally:',
-        atemTitle:'Connessione ATEM (bridge)',
-        step1:'Installa Python 3 su un PC (Mac / Windows / Raspberry Pi) sulla stessa rete dell’ATEM Mini',
-        download:'Scarica bridge.py', step3:'Esegui nel terminale:',
-        atemNote:'Trova l’IP dell’ATEM nell’app ATEM Setup. All’avvio del bridge, la schermata tally passa da grigio a nero.',
+        atemTitle:'Collega ATEM',
+        step1:'Installa l’app Flare Tally su un Mac, inserisci l’IP dell’ATEM e questo codice sala: il tally parte.',
+        download:'Scarica Flare Tally',
         back:'Torna all’inizio', needInput:'Inserisci un codice sala e un numero di telecamera',
-        cueTitle:'Luce di cue palco', cueOp:'Console operatore', cueRecv:'Apri luce di cue (ricevitore)' }
+        cueTitle:'Flare Cue', cueOp:'Console operatore', cueRecv:'Apri luce di cue (ricevitore)' }
 };
 // 언어 결정: 저장된 선택이 있으면 그것, 없으면 시스템 언어와 일치하는 게 있으면 그것, 그 외 전부 en
 function detectLang() {
@@ -196,8 +184,6 @@ function applyLang() {
   $('lblAtemTitle').textContent = t('atemTitle');
   $('lblStep1').textContent = t('step1');
   $('lblDownload').textContent = t('download');
-  $('lblStep3').textContent = t('step3');
-  $('lblAtemNote').textContent = t('atemNote');
   $('back').textContent = t('back');
   renderLangSel();
 }
@@ -220,7 +206,6 @@ $('plus').onclick  = () => { if (camCount < 20) { camCount++; renderCams(); } };
 function showRoom(code) {
   $('home').style.display = 'none'; $('roomView').style.display = 'block';
   $('code').textContent = code; curCode = code; renderCams();
-  $('cmd').textContent = `pip install websockets PyATEMMax\npython bridge.py --atem <ATEM_IP> --room ${code} --server ${wsUrl}`;
   history.replaceState(null, '', '?room=' + code);
 }
 $('create').onclick = () => {

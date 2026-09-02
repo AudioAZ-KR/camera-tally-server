@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>AudioAZ 탈리</title>
+<title>Flare Tally</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/theme.css">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -13,9 +15,9 @@
   #setup { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; padding: 24px; }
   #setup h1 { font-size: 28px; margin-bottom: 8px; }
   #setup label { width: 100%; max-width: 320px; font-size: 14px; color: var(--muted); }
-  #setup img { height: 36px; margin-bottom: 4px; }
-  #setup input { width: 100%; margin-top: 6px; font-size: 22px; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); text-align: center; }
-  #setup button#go { width: 100%; max-width: 320px; font-size: 20px; padding: 16px; border-radius: 10px; border: 0; background: var(--brand); color: #fff; font-weight: bold; }
+  #setup img { height: 84px; width: 84px; margin-bottom: 8px; }
+  #setup input { width: 100%; margin-top: 6px; font-size: 22px; padding: 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--sunken); font-family: var(--mono); color: var(--text); text-align: center; }
+  #setup button#go { width: 100%; max-width: 320px; font-size: 20px; padding: 16px; border-radius: 6px; border: 0; background: var(--brand); color: var(--bg); font-weight: bold; }
   .langsel { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 12px; font-weight: bold; cursor: pointer; }
   #setup .langsel { position: absolute; top: calc(env(safe-area-inset-top) + 12px); right: 16px; }
 
@@ -23,7 +25,7 @@
   #tally { display: none; height: 100%; flex-direction: column; }
   #light { flex: 0 0 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;
            padding-top: env(safe-area-inset-top); transition: background .1s; }
-  #tally.idle #light { background: #1a2538; }
+  #tally.idle #light { background: var(--tally-idle); }
   #tally.pvw  #light { background: var(--tally-pvw); }
   #tally.pgm  #light { background: var(--tally-pgm); }
   #tally.off  #light { background: var(--tally-off); }
@@ -34,23 +36,25 @@
 
   #panel { flex: 0 0 50%; background: var(--bg); border-top: 1px solid var(--border); display: flex; flex-direction: column; padding: 12px 14px calc(env(safe-area-inset-bottom) + 10px); gap: 10px; overflow: hidden; }
   .clock { text-align: center; }
-  .clock small { display: block; font-size: 11px; color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
-  .clock b { font-size: min(9vh, 17vw); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; letter-spacing: .02em; }
+  .clock small { display: block; font-size: 11px; color: var(--muted); }
+  .clock b { font-family: var(--mono); font-size: min(9vh, 17vw); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.05; letter-spacing: .02em; }
   .row2 { display: flex; gap: 10px; }
-  .tile { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; text-align: center; min-height: 64px; }
-  .tile small { display: block; font-size: 11px; color: var(--muted); letter-spacing: .08em; margin-bottom: 2px; }
-  .tile b { font-size: min(5vh, 9.5vw); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .tile { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; text-align: center; min-height: 64px; }
+  .tile small { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+  .tile b { font-family: var(--mono); font-size: min(5vh, 9.5vw); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
   .tile.empty b { color: var(--muted); font-size: 3vh; font-weight: 500; }
   .tile.warn b { color: #FFD166; }
   .tile.over b { color: #FF6B6B; animation: blink 1s step-start infinite; }
   @keyframes blink { 50% { opacity: .3; } }
-  #msg { flex: 1; background: var(--surface); border: 1px solid var(--border); border-left: 5px solid var(--brand); border-radius: 12px; padding: 10px 14px; overflow: auto; }
-  #msg small { display: block; font-size: 11px; color: var(--muted); letter-spacing: .08em; margin-bottom: 4px; }
-  #msg .t { font-size: min(3.6vh, 6vw); font-weight: 700; line-height: 1.3; word-break: keep-all; }
+  #msg { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; overflow: auto; }
+  #msg small { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  #msg .t { font-size: min(3.6vh, 6vw); font-weight: 700; line-height: 1.3; word-break: keep-all; white-space: pre-wrap; }
   #msg.empty .t { color: var(--muted); font-weight: 400; font-size: 3vh; }
   #msg.new { animation: pop .5s ease; }
-  @keyframes pop { 0% { background: var(--brand); } 100% { background: var(--surface); } }
-  .foot { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); }
+  @keyframes pop { 0% { background: var(--raised); } 100% { background: var(--surface); } }
+  .foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .foot > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .foot > span:last-child { display: flex; gap: 6px; flex: none; }
   .foot img { height: 14px; opacity: .8; vertical-align: middle; margin-right: 6px; }
   .foot button { background: none; border: 1px solid var(--border); color: var(--muted); padding: 4px 10px; border-radius: 6px; font-size: 12px; }
 
@@ -60,7 +64,7 @@
   /* LED 발광 테두리: 선명한 띠 + 안쪽으로 은은하게 번지는 글로우 */
   #tally.mode-border.pgm  #light { box-shadow:inset 0 0 0 7px var(--tally-pgm), inset 0 0 13px 1px var(--tally-pgm), inset 0 0 27px 3px color-mix(in srgb, var(--tally-pgm) 55%, transparent); }
   #tally.mode-border.pvw  #light { box-shadow:inset 0 0 0 7px var(--tally-pvw), inset 0 0 13px 1px var(--tally-pvw), inset 0 0 27px 3px color-mix(in srgb, var(--tally-pvw) 55%, transparent); }
-  #tally.mode-border.idle #light { box-shadow:inset 0 0 0 4px #34405e, inset 0 0 8px 0 rgba(52,64,94,.6); }
+  #tally.mode-border.idle #light { box-shadow:inset 0 0 0 4px #3A3D44, inset 0 0 8px 0 rgba(58,61,68,.6); }
   #tally.mode-border.off  #light { box-shadow:inset 0 0 0 4px var(--tally-off); }
   #tally.mode-border.pgm  #light .cam, #tally.mode-border.pgm  #light .status { color:var(--tally-pgm); text-shadow:0 0 7px color-mix(in srgb, var(--tally-pgm) 70%, transparent); }
   #tally.mode-border.pvw  #light .cam, #tally.mode-border.pvw  #light .status { color:var(--tally-pvw); text-shadow:0 0 7px color-mix(in srgb, var(--tally-pvw) 70%, transparent); }
@@ -94,8 +98,8 @@
 <body>
 <div id="setup">
   <select class="langsel" aria-label="Language"></select>
-  <img src="/logo.svg" alt="AudioAZ" onerror="this.remove()">
-  <h1 id="lblTitle">카메라 탈리</h1>
+  <img src="/app-icon.png" alt="" onerror="this.remove()">
+  <h1 id="lblTitle">Flare Tally</h1>
   <label><span id="lblRoom">방 코드</span><input id="room" placeholder="STUDIO" autocapitalize="characters"></label>
   <label><span id="lblCam">내 카메라 번호</span><input id="cam" type="number" inputmode="numeric" placeholder="1" min="1" max="20"></label>
   <button id="go">접속</button>
@@ -104,7 +108,7 @@
 <div id="tally" class="off">
   <div id="frame"></div>
   <div id="light">
-    <div class="pgmpvw"><span id="lblSend">송출</span> <b id="pgmNo">-</b> &nbsp;·&nbsp; <span id="lblWait">대기</span> <b id="pvwNo">-</b></div>
+    <div class="pgmpvw"><span id="lblSend">송출</span> <b id="pgmNo">—</b> &nbsp;·&nbsp; <span id="lblWait">대기</span> <b id="pvwNo">—</b></div>
     <div class="cam" id="myCam">1</div>
     <div class="status" id="status">연결 중</div>
   </div>
@@ -115,7 +119,7 @@
       <div class="tile empty" id="timerTile"><small id="timerLabel">타이머</small><b id="timerLeft">미설정</b></div>
     </div>
     <div id="msg" class="empty"><small id="lblNotice">공지</small><div class="t" id="msgText">공지 없음</div></div>
-    <div class="foot"><span><img src="/logo.svg" alt="" onerror="this.remove()"><span id="conn">서버 연결 중…</span></span><span><select class="langsel" aria-label="Language"></select><button id="styleToggle">테두리</button><button id="leave">설정</button></span></div>
+    <div class="foot"><span><span id="conn">서버 연결 중…</span></span><span><select class="langsel" aria-label="Language"></select><button id="styleToggle">테두리</button><button id="leave">설정</button></span></div>
   </div>
 </div>
 
@@ -126,69 +130,69 @@ const qs = new URLSearchParams(location.search);
 // ===== 다국어 (8개 언어) — PGM/PVW/ON AIR/PREVIEW/ATEM/CAM 은 방송 공용 표기라 공통 =====
 const LANGS = [['en','English'],['ko','한국어'],['ja','日本語'],['zh','中文'],['es','Español'],['fr','Français'],['de','Deutsch'],['it','Italiano']];
 const I18N = {
-  ko: { title:'카메라 탈리', room:'방 코드', cam:'내 카메라 번호', connect:'접속',
+  ko: { title:'Flare Tally', room:'방 코드', cam:'내 카메라 번호', connect:'접속',
         send:'송출', wait:'대기', connecting:'연결 중', onair:'ON AIR', preview:'PREVIEW', standby:'대기',
         disconnected:'연결 끊김', atemOff:'ATEM 오프라인', reconnecting:'재연결 중…',
         clock:'현재 시각', targetTime:'목표 시각', timer:'타이머', timerOver:'타이머 초과', unset:'미설정',
         notice:'공지', noNotice:'공지 없음', connServer:'서버 연결 중…',
         settings:'설정', border:'테두리', full:'전체화면',
-        roomWord:'방', connectedWord:'연결됨', onlineWord:'🌐 온라인', offlineWord:'📡 오프라인(같은 Wi-Fi)',
+        roomWord:'방', connectedWord:'연결됨', onlineWord:'온라인', offlineWord:'오프라인(같은 Wi-Fi)',
         targetWord:'목표', untilWord:'까지', overWord:'초과' },
-  en: { title:'Camera Tally', room:'Room Code', cam:'My Camera No.', connect:'Connect',
+  en: { title:'Flare Tally', room:'Room Code', cam:'My Camera No.', connect:'Connect',
         send:'PGM', wait:'PVW', connecting:'Connecting', onair:'ON AIR', preview:'PREVIEW', standby:'Standby',
         disconnected:'Disconnected', atemOff:'ATEM Offline', reconnecting:'Reconnecting…',
         clock:'Current Time', targetTime:'Target Time', timer:'Timer', timerOver:'Timer Over', unset:'Not set',
         notice:'Notice', noNotice:'No notice', connServer:'Connecting…',
         settings:'Setup', border:'Border', full:'Fullscreen',
-        roomWord:'Room', connectedWord:'Connected', onlineWord:'🌐 Online', offlineWord:'📡 Offline (same Wi-Fi)',
+        roomWord:'Room', connectedWord:'Connected', onlineWord:'Online', offlineWord:'Offline (same Wi-Fi)',
         targetWord:'Target', untilWord:'left', overWord:'over' },
-  ja: { title:'カメラタリー', room:'ルームコード', cam:'自分のカメラ番号', connect:'接続',
+  ja: { title:'Flare Tally', room:'ルームコード', cam:'自分のカメラ番号', connect:'接続',
         send:'PGM', wait:'PVW', connecting:'接続中', onair:'ON AIR', preview:'PREVIEW', standby:'スタンバイ',
         disconnected:'接続が切れました', atemOff:'ATEM オフライン', reconnecting:'再接続中…',
         clock:'現在時刻', targetTime:'目標時刻', timer:'タイマー', timerOver:'タイマー超過', unset:'未設定',
         notice:'お知らせ', noNotice:'お知らせなし', connServer:'サーバー接続中…',
         settings:'設定', border:'枠線', full:'全画面',
-        roomWord:'ルーム', connectedWord:'接続済み', onlineWord:'🌐 オンライン', offlineWord:'📡 オフライン（同一Wi-Fi）',
+        roomWord:'ルーム', connectedWord:'接続済み', onlineWord:'オンライン', offlineWord:'オフライン（同一Wi-Fi）',
         targetWord:'目標', untilWord:'まで', overWord:'超過' },
-  zh: { title:'摄像机 Tally', room:'房间代码', cam:'我的机位号', connect:'连接',
+  zh: { title:'Flare Tally', room:'房间代码', cam:'我的机位号', connect:'连接',
         send:'PGM', wait:'PVW', connecting:'连接中', onair:'ON AIR', preview:'PREVIEW', standby:'待机',
         disconnected:'连接断开', atemOff:'ATEM 离线', reconnecting:'重新连接中…',
         clock:'当前时间', targetTime:'目标时间', timer:'计时器', timerOver:'计时超时', unset:'未设置',
         notice:'通知', noNotice:'暂无通知', connServer:'连接服务器中…',
         settings:'设置', border:'边框', full:'全屏',
-        roomWord:'房间', connectedWord:'已连接', onlineWord:'🌐 在线', offlineWord:'📡 离线（同一 Wi-Fi）',
+        roomWord:'房间', connectedWord:'已连接', onlineWord:'在线', offlineWord:'离线（同一 Wi-Fi）',
         targetWord:'目标', untilWord:'剩余', overWord:'超时' },
-  es: { title:'Tally de Cámara', room:'Código de Sala', cam:'N.º de mi cámara', connect:'Conectar',
+  es: { title:'Flare Tally', room:'Código de Sala', cam:'N.º de mi cámara', connect:'Conectar',
         send:'PGM', wait:'PVW', connecting:'Conectando', onair:'ON AIR', preview:'PREVIEW', standby:'En espera',
         disconnected:'Desconectado', atemOff:'ATEM sin conexión', reconnecting:'Reconectando…',
         clock:'Hora actual', targetTime:'Hora objetivo', timer:'Temporizador', timerOver:'Tiempo agotado', unset:'Sin definir',
         notice:'Aviso', noNotice:'Sin avisos', connServer:'Conectando…',
         settings:'Configuración', border:'Borde', full:'Pantalla completa',
-        roomWord:'Sala', connectedWord:'Conectado', onlineWord:'🌐 En línea', offlineWord:'📡 Sin conexión (misma Wi-Fi)',
+        roomWord:'Sala', connectedWord:'Conectado', onlineWord:'En línea', offlineWord:'Sin conexión (misma Wi-Fi)',
         targetWord:'Objetivo', untilWord:'restante', overWord:'excedido' },
-  fr: { title:'Tally Caméra', room:'Code de salle', cam:'N° de ma caméra', connect:'Connexion',
+  fr: { title:'Flare Tally', room:'Code de salle', cam:'N° de ma caméra', connect:'Connexion',
         send:'PGM', wait:'PVW', connecting:'Connexion…', onair:'ON AIR', preview:'PREVIEW', standby:'En attente',
         disconnected:'Déconnecté', atemOff:'ATEM hors ligne', reconnecting:'Reconnexion…',
         clock:'Heure actuelle', targetTime:'Heure cible', timer:'Minuteur', timerOver:'Temps dépassé', unset:'Non défini',
         notice:'Annonce', noNotice:'Aucune annonce', connServer:'Connexion…',
         settings:'Réglages', border:'Bordure', full:'Plein écran',
-        roomWord:'Salle', connectedWord:'Connecté', onlineWord:'🌐 En ligne', offlineWord:'📡 Hors ligne (même Wi-Fi)',
+        roomWord:'Salle', connectedWord:'Connecté', onlineWord:'En ligne', offlineWord:'Hors ligne (même Wi-Fi)',
         targetWord:'Cible', untilWord:'restant', overWord:'dépassé' },
-  de: { title:'Kamera-Tally', room:'Raumcode', cam:'Meine Kameranr.', connect:'Verbinden',
+  de: { title:'Flare Tally', room:'Raumcode', cam:'Meine Kameranr.', connect:'Verbinden',
         send:'PGM', wait:'PVW', connecting:'Verbinden…', onair:'ON AIR', preview:'PREVIEW', standby:'Bereitschaft',
         disconnected:'Getrennt', atemOff:'ATEM offline', reconnecting:'Neu verbinden…',
         clock:'Aktuelle Zeit', targetTime:'Zielzeit', timer:'Timer', timerOver:'Timer abgelaufen', unset:'Nicht gesetzt',
         notice:'Hinweis', noNotice:'Kein Hinweis', connServer:'Verbinden…',
         settings:'Einrichtung', border:'Rahmen', full:'Vollbild',
-        roomWord:'Raum', connectedWord:'Verbunden', onlineWord:'🌐 Online', offlineWord:'📡 Offline (gleiches WLAN)',
+        roomWord:'Raum', connectedWord:'Verbunden', onlineWord:'Online', offlineWord:'Offline (gleiches WLAN)',
         targetWord:'Ziel', untilWord:'übrig', overWord:'über' },
-  it: { title:'Tally Telecamera', room:'Codice sala', cam:'N. mia telecamera', connect:'Connetti',
+  it: { title:'Flare Tally', room:'Codice sala', cam:'N. mia telecamera', connect:'Connetti',
         send:'PGM', wait:'PVW', connecting:'Connessione…', onair:'ON AIR', preview:'PREVIEW', standby:'In attesa',
         disconnected:'Disconnesso', atemOff:'ATEM offline', reconnecting:'Riconnessione…',
         clock:'Ora attuale', targetTime:'Ora obiettivo', timer:'Timer', timerOver:'Tempo scaduto', unset:'Non impostato',
         notice:'Avviso', noNotice:'Nessun avviso', connServer:'Connessione…',
         settings:'Impostazioni', border:'Bordo', full:'Schermo intero',
-        roomWord:'Sala', connectedWord:'Connesso', onlineWord:'🌐 Online', offlineWord:'📡 Offline (stessa Wi-Fi)',
+        roomWord:'Sala', connectedWord:'Connesso', onlineWord:'Online', offlineWord:'Offline (stessa Wi-Fi)',
         targetWord:'Obiettivo', untilWord:'rimasto', overWord:'oltre' }
 };
 // 언어 결정: 저장된 선택이 있으면 그것, 없으면 시스템 언어와 일치하는 게 있으면 그것, 그 외 전부 en
@@ -279,8 +283,8 @@ function render(d) {
   // pgm/pvw 목록(키어 포함 온에어)이 오면 그걸 우선 사용, 없으면 program/preview 단일값 폴백
   var pgmList = Array.isArray(d.pgm) && d.pgm.length ? d.pgm : (d.program ? [d.program] : []);
   var pvwList = Array.isArray(d.pvw) && d.pvw.length ? d.pvw : (d.preview ? [d.preview] : []);
-  $('pgmNo').textContent = pgmList.join(',') || '-';
-  $('pvwNo').textContent = pvwList.join(',') || '-';
+  $('pgmNo').textContent = pgmList.join(',') || '—';
+  $('pvwNo').textContent = pvwList.join(',') || '—';
   if (!d.online) return setTally('off', 'atemOff');
   if (pgmList.includes(cam)) { setTally('pgm', 'onair'); navigator.vibrate?.(200); }   // 메인 컷이든 키어로 얹혔든 온에어면 빨강
   else if (pvwList.includes(cam)) setTally('pvw', 'preview');

@@ -1,24 +1,27 @@
-/* ===== AudioAZ 브랜드 테마 =====
-   로고: web/logo.svg (가로형), web/logo-mark.svg (심볼) — 원본 iCloud/오디오에이지/일러스트/*.ai에서 추출
-   색상: 아래 변수만 바꾸면 전체 페이지에 적용됨 */
+/* ===== 장비 테마 =====
+   방송 장비 전면판을 기준으로 한 무채색 팔레트. 유채색은 탈리 두 색(PGM 빨강 / PVW 초록)에만 쓴다.
+   호스트 앱(host_app.py)의 팔레트와 같은 값. 여기 변수만 바꾸면 전체 페이지에 적용됨.
+   로고: web/logo.svg (가로형), web/logo-mark.svg (심볼) — 원본 AudioAZ_로고에셋/ 그대로 사용 */
 :root {
-  --brand:        #1877F2;   /* AudioAZ 브랜드 블루 (로고에서 추출) */
-  --brand-dark:   #0F5FCC;
-  --bg:           #0A1628;   /* 페이지 배경 (다크 네이비) */
-  --surface:      #12213A;   /* 카드 배경 */
-  --border:       #1F3254;
-  --text:         #EAF2FF;
-  --muted:        #8DA4C8;
-  --tally-pgm:    #E10600;   /* ON AIR */
-  --tally-pvw:    #00A651;   /* PREVIEW */
-  --tally-idle:   #0A1628;
-  --tally-off:    #3A4356;
+  --bg:           #0B0B0C;   /* 바탕 */
+  --surface:      #16171A;   /* 패널(카드) */
+  --sunken:       #0F1012;   /* 패널 안으로 파인 요소 (입력칸) */
+  --raised:       #23252A;   /* 패널 위로 솟은 요소 (보조 버튼) */
+  --border:       #2A2C31;
+  --text:         #E6E7EA;
+  --muted:        #8A8D94;
+  --dim:          #55585F;
+  --brand:        #E6E7EA;   /* 주 동작 버튼 = 밝은 무채색. 색이 아니라 명도로 위계를 만든다 */
+  --brand-dark:   #FFFFFF;
+  --tally-pgm:    #FF2A1F;   /* ON AIR */
+  --tally-pvw:    #19C37D;   /* PREVIEW */
+  --tally-idle:   #1E2024;   /* 연결됐지만 대기 */
+  --tally-off:    #2A2C31;   /* ATEM 오프라인 */
   --font: "Pretendard", -apple-system, "Apple SD Gothic Neo", system-ui, sans-serif;
+  --mono: "SF Mono", Menlo, Consolas, monospace;
 }
 .brand-bar { display: flex; align-items: center; gap: 10px; padding: 4px 0 18px; }
-.brand-bar img { height: 32px; width: auto; }
-.brand-bar .wordmark { font-weight: 900; letter-spacing: .06em; font-size: 18px; color: var(--text); }
-.brand-bar .wordmark b { color: var(--brand); }
-.brand-bar .tag { margin-left: auto; font-size: 11px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
-.brand-foot { margin-top: 28px; text-align: center; font-size: 12px; color: var(--muted); }
-.brand-foot b { color: var(--brand); }
+.brand-bar img { height: 28px; width: auto; }
+.brand-bar .tag { margin-left: auto; font-size: 12px; color: var(--muted); }
+.brand-bar .langsel { margin-left: auto; }
+.brand-foot { margin-top: 28px; text-align: center; font-size: 11px; color: var(--dim); }

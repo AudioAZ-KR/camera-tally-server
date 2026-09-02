@@ -4,21 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>AudioAZ 큐 라이트 콘솔</title>
+<title>Flare Cue</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/theme.css">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--font); padding: 20px 16px calc(env(safe-area-inset-bottom) + 20px); max-width: 640px; margin: 0 auto; line-height: 1.5; }
   h1 { font-size: 24px; margin: 12px 0 4px; }
   p.sub { color: var(--muted); margin-bottom: 22px; font-size: 14px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 18px; margin-bottom: 16px; }
   .card h2 { font-size: 16px; margin-bottom: 10px; }
-  input { font-size: 18px; padding: 11px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); text-align: center; }
+  input { font-size: 18px; padding: 11px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); text-align: center; }
   input:disabled { opacity: .5; }
-  button { font-size: 15px; padding: 12px; border-radius: 10px; border: 0; background: var(--brand); color: #fff; font-weight: bold; cursor: pointer; }
+  button { font-size: 15px; padding: 12px; border-radius: 6px; border: 0; background: var(--brand); color: var(--bg); font-weight: bold; cursor: pointer; }
   button.sec { background: var(--border); color: var(--text); }
   button:disabled { opacity: .4; cursor: default; }
-  .langsel { position: absolute; top: 14px; right: 16px; width: auto; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 12px; font-weight: bold; cursor: pointer; }
+  .langsel { width: auto; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 12px; font-weight: bold; cursor: pointer; }
   small { color: var(--muted); }
   #console { display: none; }
 
@@ -26,19 +28,19 @@
   #setup button { width: 100%; }
   #setup .genrow { display: flex; gap: 8px; } #setup .genrow button { flex: 1; }
 
-  .code { font-size: 34px; font-weight: 900; letter-spacing: .12em; color: var(--brand); }
+  .code { font-size: 34px; font-weight: 700; font-family: var(--mono); letter-spacing: .08em; color: var(--text); }
   .tophead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
-  #connBadge { font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 999px; background: var(--border); color: var(--muted); white-space: nowrap; }
+  #connBadge { font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 4px; background: var(--border); color: var(--muted); white-space: nowrap; }
   #connBadge.on { background: #0a3d22; color: #4ade80; }
 
   /* 채널 행 */
   .chrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
-           background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 8px 0; }
+           background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 8px 0; }
   .chrow .meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .chrow .name { font-size: 19px; font-weight: 900; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chrow .cnt { font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 999px; background: var(--border); color: var(--muted); white-space: nowrap; }
+  .chrow .cnt { font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px; background: var(--border); color: var(--muted); white-space: nowrap; }
   .chrow .cnt.on { background: #0a3d22; color: #4ade80; }
-  .chrow .pill { font-size: 12px; font-weight: 900; letter-spacing: .06em; padding: 3px 10px; border-radius: 999px; background: var(--border); color: var(--muted); white-space: nowrap; }
+  .chrow .pill { font-size: 12px; font-weight: 900; letter-spacing: .06em; padding: 3px 10px; border-radius: 4px; background: var(--border); color: var(--muted); white-space: nowrap; }
   .chrow .pill.stby { background: var(--tally-pgm); color: #fff; }
   .chrow .pill.go { background: var(--tally-pvw); color: #fff; }
   .chrow .btns { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; }
@@ -56,13 +58,12 @@
   .addrow button { width: 90px; }
 
   .links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
-  .links a { display: block; text-align: center; padding: 10px 0; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: #fff; text-decoration: none; font-weight: bold; font-size: 14px; }
+  .links a { display: block; text-align: center; padding: 10px 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: #fff; text-decoration: none; font-weight: bold; font-size: 14px; }
 </style>
 </head>
 <body>
-<select class="langsel" aria-label="Language"></select>
-<div class="brand-bar"><img src="/logo.svg" alt="AudioAZ" onerror="this.remove()"><span class="tag">Cue Light</span></div>
-<h1 id="lblTitle">무대 큐 라이트 콘솔</h1>
+<div class="brand-bar"><img src="/logo.svg" alt="AudioAZ" onerror="this.remove()"><select class="langsel" aria-label="Language"></select></div>
+<h1 id="lblTitle">Flare Cue</h1>
 <p class="sub" id="lblSub">채널별 STANDBY / GO를 스태프 스마트폰에 표시합니다</p>
 
 <div id="setup">
@@ -99,7 +100,6 @@
   <button class="sec" id="back" style="width:100%" >처음으로</button>
 </div>
 
-<div class="brand-foot">Powered by <b>AudioAZ</b> &nbsp;·&nbsp; Made in Korea 🇰🇷</div>
 <script>
 const $ = id => document.getElementById(id);
 const qs = new URLSearchParams(location.search);
@@ -107,54 +107,54 @@ const qs = new URLSearchParams(location.search);
 // ===== 다국어 (8개 언어) — STANDBY/GO/ALL/CUE 등 공연 공용 표기는 공통 =====
 const LANGS = [['en','English'],['ko','한국어'],['ja','日本語'],['zh','中文'],['es','Español'],['fr','Français'],['de','Deutsch'],['it','Italiano']];
 const I18N = {
-  ko: { title:'무대 큐 라이트 콘솔', sub:'채널별 STANDBY / GO를 스태프 스마트폰에 표시합니다',
+  ko: { title:'Flare Cue', sub:'채널별 STANDBY / GO를 스태프 스마트폰에 표시합니다',
         roomTitle:'방 코드', gen:'코드 생성', start:'콘솔 시작',
         share:'수신자에게 방 코드를 알려주거나 아래 링크를 공유하세요.', chTitle:'채널',
         addPh:'채널 추가 (예: FLY)', add:'추가', back:'처음으로', needRoom:'방 코드를 입력하세요',
         connected:'연결됨', connecting:'연결 중…', reconnecting:'재연결 중…',
-        waitAck:'응답 대기', acked:'확인 ✓', devices:'대' },
-  en: { title:'Stage Cue Light Console', sub:'Send per-channel STANDBY / GO to crew smartphones',
+        waitAck:'응답 대기', acked:'확인', devices:'대' },
+  en: { title:'Flare Cue', sub:'Send per-channel STANDBY / GO to crew smartphones',
         roomTitle:'Room Code', gen:'Generate', start:'Start console',
         share:'Share the room code or the links below with receivers.', chTitle:'Channels',
         addPh:'Add channel (e.g. FLY)', add:'Add', back:'Back to start', needRoom:'Enter a room code',
         connected:'Connected', connecting:'Connecting…', reconnecting:'Reconnecting…',
-        waitAck:'awaiting ack', acked:'ACK ✓', devices:'' },
-  ja: { title:'ステージ キューライト コンソール', sub:'チャンネルごとの STANDBY / GO をスタッフのスマホに表示',
+        waitAck:'awaiting ack', acked:'ACK', devices:'' },
+  ja: { title:'Flare Cue', sub:'チャンネルごとの STANDBY / GO をスタッフのスマホに表示',
         roomTitle:'ルームコード', gen:'コード生成', start:'コンソール開始',
         share:'受信者にルームコードか下のリンクを共有してください。', chTitle:'チャンネル',
         addPh:'チャンネル追加（例: FLY）', add:'追加', back:'最初に戻る', needRoom:'ルームコードを入力してください',
         connected:'接続済み', connecting:'接続中…', reconnecting:'再接続中…',
-        waitAck:'応答待ち', acked:'確認 ✓', devices:'台' },
-  zh: { title:'舞台提示灯控制台', sub:'向工作人员手机发送各通道的 STANDBY / GO',
+        waitAck:'応答待ち', acked:'確認', devices:'台' },
+  zh: { title:'Flare Cue', sub:'向工作人员手机发送各通道的 STANDBY / GO',
         roomTitle:'房间代码', gen:'生成代码', start:'启动控制台',
         share:'把房间代码或下方链接分享给接收者。', chTitle:'通道',
         addPh:'添加通道（例: FLY）', add:'添加', back:'返回首页', needRoom:'请输入房间代码',
         connected:'已连接', connecting:'连接中…', reconnecting:'重新连接中…',
-        waitAck:'等待确认', acked:'已确认 ✓', devices:'台' },
-  es: { title:'Consola de Luz de Aviso', sub:'Envía STANDBY / GO por canal a los móviles del equipo',
+        waitAck:'等待确认', acked:'已确认', devices:'台' },
+  es: { title:'Flare Cue', sub:'Envía STANDBY / GO por canal a los móviles del equipo',
         roomTitle:'Código de Sala', gen:'Generar', start:'Iniciar consola',
         share:'Comparte el código de sala o los enlaces de abajo.', chTitle:'Canales',
         addPh:'Añadir canal (ej. FLY)', add:'Añadir', back:'Volver al inicio', needRoom:'Introduce un código de sala',
         connected:'Conectado', connecting:'Conectando…', reconnecting:'Reconectando…',
-        waitAck:'esperando conf.', acked:'CONF ✓', devices:'' },
-  fr: { title:'Console Feux de Conduite', sub:'Envoie STANDBY / GO par canal aux smartphones de l’équipe',
+        waitAck:'esperando conf.', acked:'CONF', devices:'' },
+  fr: { title:'Flare Cue', sub:'Envoie STANDBY / GO par canal aux smartphones de l’équipe',
         roomTitle:'Code de salle', gen:'Générer', start:'Démarrer la console',
         share:'Partagez le code de salle ou les liens ci-dessous.', chTitle:'Canaux',
         addPh:'Ajouter un canal (ex. FLY)', add:'Ajouter', back:'Retour au début', needRoom:'Saisissez un code de salle',
         connected:'Connecté', connecting:'Connexion…', reconnecting:'Reconnexion…',
-        waitAck:'attente conf.', acked:'CONF ✓', devices:'' },
-  de: { title:'Bühnen-Cue-Licht-Konsole', sub:'Sendet STANDBY / GO pro Kanal an Crew-Smartphones',
+        waitAck:'attente conf.', acked:'CONF', devices:'' },
+  de: { title:'Flare Cue', sub:'Sendet STANDBY / GO pro Kanal an Crew-Smartphones',
         roomTitle:'Raumcode', gen:'Generieren', start:'Konsole starten',
         share:'Teile den Raumcode oder die Links unten mit den Empfängern.', chTitle:'Kanäle',
         addPh:'Kanal hinzufügen (z. B. FLY)', add:'Hinzufügen', back:'Zurück zum Start', needRoom:'Gib einen Raumcode ein',
         connected:'Verbunden', connecting:'Verbinden…', reconnecting:'Neu verbinden…',
-        waitAck:'warte auf ACK', acked:'ACK ✓', devices:'' },
-  it: { title:'Console Luci di Cue', sub:'Invia STANDBY / GO per canale agli smartphone della crew',
+        waitAck:'warte auf ACK', acked:'ACK', devices:'' },
+  it: { title:'Flare Cue', sub:'Invia STANDBY / GO per canale agli smartphone della crew',
         roomTitle:'Codice sala', gen:'Genera', start:'Avvia console',
         share:'Condividi il codice sala o i link qui sotto.', chTitle:'Canali',
         addPh:'Aggiungi canale (es. FLY)', add:'Aggiungi', back:'Torna all’inizio', needRoom:'Inserisci un codice sala',
         connected:'Connesso', connecting:'Connessione…', reconnecting:'Riconnessione…',
-        waitAck:'attesa conferma', acked:'CONF ✓', devices:'' }
+        waitAck:'attesa conferma', acked:'CONF', devices:'' }
 };
 function detectLang() {
   if (I18N[localStorage.lang]) return localStorage.lang;

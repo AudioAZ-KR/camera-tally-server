@@ -1,6 +1,6 @@
 """
 탈리 중계 서버 (aiohttp)
-- HTTP : web/ 폴더의 탈리 페이지 서빙, /bridge.py 다운로드
+- HTTP : web/ 폴더의 탈리 페이지 서빙
 - WS   : /ws  브릿지(ATEM 상태 송신) <-> 스마트폰(수신) 중계, 방 코드별 격리
 - 접속 카메라 명단(roster)을 추적해 호스트(브릿지)로 전송
 - 호스트 공지 메시지(msg)·타이머(timer)를 방 단위로 보관하고 폰에 브로드캐스트 (늦게 접속한 폰도 현재 상태 수신)
@@ -258,11 +258,6 @@ async def start_bg(app):
 async def index(request):
     return web.FileResponse(os.path.join(WEB_DIR, "index.html"), headers={"Cache-Control": "no-cache"})
 
-async def bridge_file(request):
-    return web.FileResponse(os.path.join(BASE, "bridge.py"),
-                            headers={"Content-Type": "text/x-python; charset=utf-8",
-                                     "Content-Disposition": "attachment; filename=bridge.py"})
-
 async def health(request):
     return web.json_response({"ok": True, "rooms": len(rooms)})
 
@@ -272,7 +267,6 @@ def make_app():
     a.on_startup.append(start_bg)
     a.router.add_get("/", index)
     a.router.add_get("/ws", ws_handler)
-    a.router.add_get("/bridge.py", bridge_file)
     a.router.add_get("/health", health)
     a.router.add_static("/", WEB_DIR, show_index=False)
     return a
