@@ -27,7 +27,8 @@ HOSTS = {"production": "https://api.push.apple.com", "sandbox": "https://api.san
 HOST = HOSTS.get(ENV, HOSTS["production"])
 _env_of: dict[str, str] = {}
 _active: dict[str, bool] = {}       # token -> 앱이 앞에 떠 있음(앱이 직접 갱신·햅틱하므로 푸시 생략)
-_alerts: dict[str, bool] = {}       # token -> 백그라운드 알림(진동·배너) 허용 (앱 안 '알림' 스위치)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
+_alerts: dict[str, bool] = {}       # token -> 백그라운드 알림(진동·배너) 허용 (앱 안 '알림' 스위치)
+_lang: dict[str, str] = {}          # token -> 앱 언어(ko/en) — 알림 문구용         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
 
 # room -> {token: cam}
@@ -49,6 +50,7 @@ def unregister(token: str):
     _env_of.pop(token, None)
     _active.pop(token, None)
     _alerts.pop(token, None)
+    _lang.pop(token, None)
 
 
 def set_active(token: str, active: bool, alerts=None):
@@ -59,6 +61,14 @@ def set_active(token: str, active: bool, alerts=None):
 
 def set_alerts(token: str, alerts: bool):
     if token: _alerts[token] = bool(alerts)
+
+
+def set_lang(token: str, lang):
+    if token and lang in ("ko", "en"): _lang[token] = lang
+
+
+_MSG = {"ko": {"pgm": ("CAM {cam} ON AIR", "지금 방송 중"), "idle": ("CAM {cam} 대기", "온에어 해제"), "pvw": ("CAM {cam} PREVIEW", "다음 컷 대기")},
+        "en": {"pgm": ("CAM {cam} ON AIR", "You are live"), "idle": ("CAM {cam} STANDBY", "Off air"), "pvw": ("CAM {cam} PREVIEW", "Up next")}}
 
 
 def count(room: str) -> int:
@@ -162,12 +172,14 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
         ps = (prev or {}).get("state")
         if not _alerts.get(token, True):
             alert_onair = False                        # 앱에서 '알림' 끔 → 조용히 갱신만
+        m = _MSG.get(_lang.get(token, "ko"), _MSG["ko"])
+        def alert(kind): t, b = m[kind]; return {"title": t.format(cam=cam), "body": b, "sound": "default"}
         if alert_onair and cs["state"] == "pgm" and ps != "pgm":
-            aps["alert"] = {"title": f"CAM {cam} ON AIR", "body": "지금 방송 중", "sound": "default"}   # 온에어로 '바뀔 때'만 알림(진동 1회)
+            aps["alert"] = alert("pgm")                    # 온에어로 '바뀔 때'만 알림(진동 1회)
         elif alert_onair and cs["state"] == "idle" and ps == "pgm":
-            aps["alert"] = {"title": f"CAM {cam} 대기", "body": "온에어 해제", "sound": "default"}   # 온에어 해제 = 진동 1회
+            aps["alert"] = alert("idle")                   # 온에어 해제 = 진동 1회
         elif alert_onair and cs["state"] == "pvw" and ps not in ("pvw", "pgm"):
-            aps["alert"] = {"title": f"CAM {cam} PREVIEW", "body": "다음 컷 대기", "sound": "default"}
+            aps["alert"] = alert("pvw")
             tasks.append(_send_repeat(token, {"aps": aps}, times=3, gap=0.15))   # 프리뷰 진입 = 진동 3번(알림 푸시 3연타)
             continue
         tasks.append(_send(token, {"aps": aps}))
