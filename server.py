@@ -21,6 +21,7 @@ bridges: dict[str, set] = {}   # room -> set(ws)  (호스트/브릿지 연결)
 cams: dict[str, dict] = {}     # room -> {ws: cam_number}  (접속한 폰)
 seen: dict = {}                # ws -> 마지막 수신 시각 (응답 없는 폰 정리용)
 ios_token: dict = {}           # ws -> 아이폰 Live Activity 토큰 (전면/후면 판단용)
+ws_rtt: dict = {}              # ws -> 서버 왕복 지연 ms (폰이 보고)
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -86,6 +87,14 @@ def cue_set(room, ch, st):
 def roster(room):
     return sorted(set(c for c in cams.get(room, {}).values() if c))
 
+def roster_rtt(room):
+    """카메라 번호 → 지연(ms). 같은 번호가 여러 폰이면 가장 느린 값."""
+    r = {}
+    for ws, cam in cams.get(room, {}).items():
+        if cam and ws in ws_rtt:
+            r[str(cam)] = max(r.get(str(cam), 0), ws_rtt[ws])
+    return r
+
 async def broadcast(room, msg=None):
     msg = msg or tally_msg(room)
     for ws in list(rooms.get(room, ())):
@@ -95,7 +104,7 @@ async def broadcast(room, msg=None):
             rooms[room].discard(ws)
 
 async def broadcast_roster(room):
-    msg = json.dumps({"type": "roster", "cams": roster(room)})
+    msg = json.dumps({"type": "roster", "cams": roster(room), "rtt": roster_rtt(room)})
     for ws in list(bridges.get(room, ())):
         try:
             await ws.send_str(msg)
@@ -141,7 +150,7 @@ async def ws_handler(request):
                     state[room] = {"program": 0, "preview": 0, "pgm": [], "pvw": [], "online": True}
                     print(f"[bridge] joined {room}", flush=True)
                     await broadcast(room)
-                    await ws.send_str(json.dumps({"type": "roster", "cams": roster(room)}))
+                    await ws.send_str(json.dumps({"type": "roster", "cams": roster(room), "rtt": roster_rtt(room)}))
                     await ws.send_str(msg_msg(room)); await ws.send_str(timer_msg(room))
                 else:
                     rooms.setdefault(room, set()).add(ws)
@@ -208,10 +217,16 @@ async def ws_handler(request):
                 tok = str(data.get("token", "")).strip().lower()
                 if tok:
                     ios_token[ws] = tok; apns_live.set_active(tok, bool(data.get("active")), data.get("alerts")); apns_live.set_lang(tok, data.get("lang"))
+            elif t == "rtt" and room:                # 폰이 잰 서버 왕복 지연(ms) 보고 → 호스트에 전달
+                ms = int(data.get("ms", 0) or 0)
+                if 0 < ms < 100000 and not is_bridge:
+                    ws_rtt[ws] = ms
+                    await broadcast_roster(room)
             elif t == "ping":
-                await ws.send_str('{"type":"pong"}')
+                ts = data.get("t")
+                await ws.send_str(json.dumps({"type": "pong", "t": ts}) if ts is not None else '{"type":"pong"}')
     finally:
-        seen.pop(ws, None)
+        seen.pop(ws, None); ws_rtt.pop(ws, None)
         tok = ios_token.pop(ws, None)
         if tok: apns_live.set_active(tok, False)      # 소켓이 끊기면(뒤로 감·종료) 푸시 재개
         if room:
@@ -248,7 +263,7 @@ async def reaper(app):
         for room, d in list(cams.items()):
             stale = [w for w in list(d) if now - seen.get(w, 0) > STALE_SEC]
             for w in stale:
-                d.pop(w, None); rooms.get(room, set()).discard(w); seen.pop(w, None)
+                d.pop(w, None); rooms.get(room, set()).discard(w); seen.pop(w, None); ws_rtt.pop(w, None)
                 tok = ios_token.pop(w, None)
                 if tok: apns_live.set_active(tok, False)
                 try: await w.close()

@@ -211,7 +211,7 @@ $('room').value = qs.get('room') || localStorage.room || '';
 $('cam').value  = qs.get('cam')  || localStorage.cam  || '';
 let ws, room, cam, wakeLock, pingTimer;
 let dispStyle = localStorage.dispStyle || 'full', curState = 'off', curStatusKey = 'connecting';
-let connMode = null;
+let connMode = null, lastRtt = 0;
 
 function applyLang() {
   document.documentElement.lang = lang;
@@ -250,7 +250,8 @@ $('styleToggle').onclick = () => setStyle(dispStyle === 'border' ? 'full' : 'bor
 function renderConn() {
   if (connMode === null) { $('conn').textContent = t('connServer'); return; }
   const modeTxt = connMode === 'online' ? t('onlineWord') : t('offlineWord');
-  $('conn').textContent = `${t('roomWord')} ${room} · ${t('connectedWord')} · ${modeTxt}`;
+  const ping = lastRtt > 0 ? ` · ${lastRtt}ms` : '';
+  $('conn').textContent = `${t('roomWord')} ${room} · ${t('connectedWord')} · ${modeTxt}${ping}`;
 }
 
 $('go').onclick = () => {
@@ -273,11 +274,16 @@ function connect() {
   ws.onopen = () => { ws.send(JSON.stringify({type:'join', role:'phone', room, cam}));
     connMode = (location.protocol === 'https:') ? 'online' : 'offline';
     renderConn();
-    pingTimer = setInterval(()=>ws.readyState===1 && ws.send('{"type":"ping"}'), 8000); };
+    const sendPing = () => { if (ws.readyState===1) ws.send(JSON.stringify({type:'ping', t: Date.now()})); };
+    sendPing();
+    pingTimer = setInterval(sendPing, 5000); };
   ws.onmessage = e => { const d = JSON.parse(e.data);
     if (d.type === 'tally') render(d);
     else if (d.type === 'msg') showMsg(d);
-    else if (d.type === 'timer') setTimer(d); };
+    else if (d.type === 'timer') setTimer(d);
+    else if (d.type === 'pong' && d.t) { lastRtt = Date.now() - d.t;
+      if (ws.readyState===1) ws.send(JSON.stringify({type:'rtt', ms: lastRtt}));   // 서버→호스트로 전달
+      renderConn(); } };
   ws.onclose = () => { clearInterval(pingTimer); if (manualClose) { manualClose = false; return; } setTally('off', 'disconnected'); connMode = null; $('conn').textContent = t('reconnecting'); setTimeout(connect, 2000); };
   ws.onerror = () => ws.close();
 }
