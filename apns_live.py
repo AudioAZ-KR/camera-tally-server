@@ -33,7 +33,9 @@ _device_token: dict[str, str] = {}  # deviceId -> 현재 활성 토큰 (기기�
 _token_device: dict[str, str] = {}  # token -> deviceId
 _end_tasks: dict[str, asyncio.Task] = {}
 _push_tok: dict[str, str] = {}      # LA token -> 일반 알림용 기기 토큰 (가로 화면 배너)
-_banner: dict[str, bool] = {}       # LA token -> 배너 모드(앱 '배너' 스위치): 가로 화면에선 아일랜드가 안 그려지므로 일반 알림 배너로   # deviceId -> 유예 후 활동 종료 작업 (앱 종료·소켓 끊김 대비)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
+_banner: dict[str, bool] = {}
+_keep: dict[str, bool] = {}         # LA token -> '잠금 유지': 소켓이 어떻게 끊겨도 종료로 보지 않음 (나가기·호스트 종료·410만 종료)
+_sleeping: dict[str, bool] = {}     # LA token -> 앱이 "잠들 예정"을 알림 (뒤로 간 뒤 몇 초) → 이후 끊김은 잠듦       # LA token -> 배너 모드(앱 '배너' 스위치): 가로 화면에선 아일랜드가 안 그려지므로 일반 알림 배너로   # deviceId -> 유예 후 활동 종료 작업 (앱 종료·소켓 끊김 대비)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
 
 # room -> {token: cam}
@@ -56,7 +58,7 @@ def register(room: str, cam: int, token: str, device: str = ""):
 def _unregister_token(token: str):
     for d in _tokens.values():
         d.pop(token, None)
-    for m in (_last, _env_of, _active, _alerts, _lang, _push_tok, _banner):
+    for m in (_last, _env_of, _active, _alerts, _lang, _push_tok, _banner, _keep, _sleeping):
         m.pop(token, None)
     dev = _token_device.pop(token, None)
     if dev and _device_token.get(dev) == token:
@@ -124,6 +126,19 @@ def set_alerts(token: str, alerts: bool):
 
 def set_push(token: str, hex_: str):
     if token and hex_: _push_tok[token] = hex_
+
+
+def set_keep(token: str, on: bool):
+    if token: _keep[token] = bool(on)
+
+
+def mark_sleep(token: str, on: bool = True):
+    if token: _sleeping[token] = bool(on)
+
+
+def treat_close_as_sleep(token: str) -> bool:
+    """소켓 끊김을 '잠듦'으로 볼지: 잠금 유지 ON 또는 앱이 잠들 예정을 알린 경우"""
+    return bool(_keep.get(token) or _sleeping.get(token))
 
 
 def set_banner(token: str, on: bool):
@@ -209,7 +224,7 @@ async def _send(token: str, payload: dict):
         return                                            # 그 외 오류는 재시도 없음
     unregister(token)                                     # 양쪽 다 거부 → 무효 토큰
 
-async def _send_banner(la_token: str, dev_token: str, title: str, body: str, collapse: str):
+async def _send_banner(la_token: str, dev_token: str, title: str, body: str, collapse: str, collapse_state: str = "idle", cam: int = 0):
     """일반 알림 푸시(배너). iOS는 가로 화면에서 다이나믹 아일랜드를 그리지 않으므로 촬영 앱을 가로로 쓸 때 이걸로 탈리를 알린다."""
     global _client
     import httpx
@@ -217,7 +232,8 @@ async def _send_banner(la_token: str, dev_token: str, title: str, body: str, col
         _client = httpx.AsyncClient(http2=True, timeout=10)
     headers = {"authorization": f"bearer {_jwt()}", "apns-topic": BUNDLE_ID, "apns-push-type": "alert",
                "apns-priority": "10", "apns-expiration": "0", "apns-collapse-id": collapse}
-    payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default"}}
+    payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default", "mutable-content": 1},
+               "tally": {"state": collapse_state, "cam": cam}}          # 알림 서비스 확장이 색판(빨강/초록/회색+번호) 썸네일을 붙인다
     first = _env_of.get(la_token) or ENV
     for env in [first] + [e for e in HOSTS if e != first]:
         r = await _client.post(f"{HOSTS[env]}/3/device/{dev_token}", headers=headers, content=json.dumps(payload))
@@ -263,7 +279,7 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
         if alert_onair and kind and _banner.get(token) and _push_tok.get(token):
             # 배너 모드: 일반 알림 1건(가로에서도 보임, 진동 1회) + 아일랜드는 알림 없이 갱신 (이중 진동 방지)
             t_, b_ = m[kind]
-            tasks.append(_send_banner(token, _push_tok[token], t_.format(cam=cam), b_, f"tally-{cam}"))
+            tasks.append(_send_banner(token, _push_tok[token], t_.format(cam=cam), b_, f"tally-{cam}", kind, cam))
             tasks.append(_send(token, {"aps": aps}))
             continue
         if do_alert and cs["state"] == "pgm" and ps != "pgm":

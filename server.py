@@ -221,6 +221,8 @@ async def ws_handler(request):
                     apns_live.set_active(tok, bool(data.get("active")), data.get("alerts")); apns_live.set_lang(tok, data.get("lang"))
                     if data.get("push"): apns_live.set_push(tok, str(data["push"]).strip().lower())
                     if "banner" in data: apns_live.set_banner(tok, bool(data.get("banner")))
+                    if "keep" in data: apns_live.set_keep(tok, bool(data.get("keep")))
+                    apns_live.mark_sleep(tok, bool(data.get("suspend")))     # 잠들 예정 알림 / 다시 활성이면 해제
                     apns_live.cancel_end(apns_live.device_of(tok))            # 앱이 살아있음 → 예약된 종료 취소
             elif t == "rtt" and room:                # 폰이 잰 서버 왕복 지연(ms) 보고 → 호스트에 전달
                 ms = int(data.get("ms", 0) or 0)
@@ -239,8 +241,9 @@ async def ws_handler(request):
             # 끊긴 방식으로 구분: 하트비트 타임아웃(TimeoutError) = 백그라운드에서 잠듦 → 아일랜드 유지(APNs로 갱신)
             #                    연결 리셋/EOF = 앱이 스와이프로 죽음 → 5초 유예 후 아일랜드 종료 (정상 close=나가기는 앱이 직접 종료)
             exc = ws.exception()
-            killed = ws.close_code != 1000 and not isinstance(exc, asyncio.TimeoutError)
+            killed = ws.close_code != 1000 and not isinstance(exc, asyncio.TimeoutError) and not apns_live.treat_close_as_sleep(tok)
             if killed: apns_live.schedule_end(apns_live.device_of(tok))
+            else: apns_live.mark_sleep(tok, False)
         if room:
             if is_cueop:
                 cue_ops.get(room, set()).discard(ws)
@@ -318,6 +321,7 @@ async def ios_activity(request):
     if "alerts" in d: apns_live.set_alerts(token, bool(d.get("alerts")))
     if d.get("push"): apns_live.set_push(token, str(d["push"]).strip().lower())
     if "banner" in d: apns_live.set_banner(token, bool(d.get("banner")))
+    if "keep" in d: apns_live.set_keep(token, bool(d.get("keep")))
     apns_live.set_lang(token, d.get("lang"))
     print(f"[ios   ] activity {room} cam={cam} ({apns_live.count(room)} phones)", flush=True)
     # 등록 직후 현재 상태를 한 번 보내 아일랜드가 바로 맞춰지게
