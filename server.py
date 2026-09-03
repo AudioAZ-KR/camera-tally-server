@@ -22,6 +22,7 @@ cams: dict[str, dict] = {}     # room -> {ws: cam_number}  (접속한 폰)
 seen: dict = {}                # ws -> 마지막 수신 시각 (응답 없는 폰 정리용)
 ios_token: dict = {}           # ws -> 아이폰 Live Activity 토큰 (전면/후면 판단용)
 ws_rtt: dict = {}              # ws -> 서버 왕복 지연 ms (폰이 보고)
+token_ws: dict = {}            # token -> 이 토큰을 마지막으로 보고한 소켓 (재접속하면 새 소켓이 소유권을 가짐)
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -216,7 +217,8 @@ async def ws_handler(request):
             elif t == "ios" and room:                # 아이폰 앱: 전면/후면 상태 (전면이면 알림 푸시 생략)
                 tok = str(data.get("token", "")).strip().lower()
                 if tok:
-                    ios_token[ws] = tok; apns_live.set_active(tok, bool(data.get("active")), data.get("alerts")); apns_live.set_lang(tok, data.get("lang"))
+                    ios_token[ws] = tok; token_ws[tok] = ws
+                    apns_live.set_active(tok, bool(data.get("active")), data.get("alerts")); apns_live.set_lang(tok, data.get("lang"))
                     apns_live.cancel_end(apns_live.device_of(tok))            # 앱이 살아있음 → 예약된 종료 취소
             elif t == "rtt" and room:                # 폰이 잰 서버 왕복 지연(ms) 보고 → 호스트에 전달
                 ms = int(data.get("ms", 0) or 0)
@@ -229,9 +231,14 @@ async def ws_handler(request):
     finally:
         seen.pop(ws, None); ws_rtt.pop(ws, None)
         tok = ios_token.pop(ws, None)
-        if tok:
+        if tok and token_ws.get(tok) is ws:           # 이 소켓이 아직 토큰 소유자일 때만 (재접속했으면 새 소켓 담당)
+            token_ws.pop(tok, None)
             apns_live.set_active(tok, False)          # 소켓이 끊기면(뒤로 감·종료) 푸시 재개
-            apns_live.schedule_end(apns_live.device_of(tok))   # 5초 안에 안 돌아오면 아일랜드 종료 (앱 스와이프 종료 대응)
+            # 끊긴 방식으로 구분: 하트비트 타임아웃(TimeoutError) = 백그라운드에서 잠듦 → 아일랜드 유지(APNs로 갱신)
+            #                    연결 리셋/EOF = 앱이 스와이프로 죽음 → 5초 유예 후 아일랜드 종료 (정상 close=나가기는 앱이 직접 종료)
+            exc = ws.exception()
+            killed = ws.close_code != 1000 and not isinstance(exc, asyncio.TimeoutError)
+            if killed: apns_live.schedule_end(apns_live.device_of(tok))
         if room:
             if is_cueop:
                 cue_ops.get(room, set()).discard(ws)
@@ -268,9 +275,8 @@ async def reaper(app):
             for w in stale:
                 d.pop(w, None); rooms.get(room, set()).discard(w); seen.pop(w, None); ws_rtt.pop(w, None)
                 tok = ios_token.pop(w, None)
-                if tok:
-                    apns_live.set_active(tok, False)
-                    apns_live.schedule_end(apns_live.device_of(tok))
+                if tok and token_ws.get(tok) is w:       # 서버가 끊는 무응답 = 잠든 폰 → 아일랜드 유지
+                    token_ws.pop(tok, None); apns_live.set_active(tok, False)
                 try: await w.close()
                 except Exception: pass
             if stale:
