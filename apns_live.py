@@ -26,7 +26,8 @@ if not _key_pem and os.environ.get("APNS_KEY_PATH"):
 HOSTS = {"production": "https://api.push.apple.com", "sandbox": "https://api.sandbox.push.apple.com"}
 HOST = HOSTS.get(ENV, HOSTS["production"])
 _env_of: dict[str, str] = {}
-_active: dict[str, bool] = {}       # token -> 앱이 앞에 떠 있음(앱이 직접 갱신·햅틱하므로 푸시 생략)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
+_active: dict[str, bool] = {}       # token -> 앱이 앞에 떠 있음(앱이 직접 갱신·햅틱하므로 푸시 생략)
+_alerts: dict[str, bool] = {}       # token -> 백그라운드 알림(진동·배너) 허용 (앱 안 '알림' 스위치)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
 
 # room -> {token: cam}
@@ -47,10 +48,17 @@ def unregister(token: str):
     _last.pop(token, None)
     _env_of.pop(token, None)
     _active.pop(token, None)
+    _alerts.pop(token, None)
 
 
-def set_active(token: str, active: bool):
-    if token: _active[token] = bool(active)
+def set_active(token: str, active: bool, alerts=None):
+    if token:
+        _active[token] = bool(active)
+        if alerts is not None: _alerts[token] = bool(alerts)
+
+
+def set_alerts(token: str, alerts: bool):
+    if token: _alerts[token] = bool(alerts)
 
 
 def count(room: str) -> int:
@@ -152,6 +160,8 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
             continue                                   # 앱이 앞에 있음: 소켓으로 즉시 갱신·앱 햅틱 → 푸시(알림 진동) 생략
         aps = {"timestamp": now, "event": "update", "content-state": cs, "relevance-score": 100 if cs["state"] == "pgm" else 50}
         ps = (prev or {}).get("state")
+        if not _alerts.get(token, True):
+            alert_onair = False                        # 앱에서 '알림' 끔 → 조용히 갱신만
         if alert_onair and cs["state"] == "pgm" and ps != "pgm":
             aps["alert"] = {"title": f"CAM {cam} ON AIR", "body": "지금 방송 중", "sound": "default"}   # 온에어로 '바뀔 때'만 알림(진동 1회)
         elif alert_onair and cs["state"] == "idle" and ps == "pgm":

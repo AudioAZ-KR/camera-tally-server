@@ -207,7 +207,7 @@ async def ws_handler(request):
             elif t == "ios" and room:                # 아이폰 앱: 전면/후면 상태 (전면이면 알림 푸시 생략)
                 tok = str(data.get("token", "")).strip().lower()
                 if tok:
-                    ios_token[ws] = tok; apns_live.set_active(tok, bool(data.get("active")))
+                    ios_token[ws] = tok; apns_live.set_active(tok, bool(data.get("active")), data.get("alerts"))
             elif t == "ping":
                 await ws.send_str('{"type":"pong"}')
     finally:
@@ -285,6 +285,7 @@ async def ios_activity(request):
         apns_live.unregister(token); return web.json_response({"ok": True})
     room = str(d.get("room", "")).strip().upper() or "DEFAULT"; cam = int(d.get("cam", 0) or 0)
     apns_live.register(room, cam, token)
+    if "alerts" in d: apns_live.set_alerts(token, bool(d.get("alerts")))
     print(f"[ios   ] activity {room} cam={cam} ({apns_live.count(room)} phones)", flush=True)
     # 등록 직후 현재 상태를 한 번 보내 아일랜드가 바로 맞춰지게
     asyncio.create_task(apns_live.push_room(room, state.get(room, OFFLINE), notes.get(room), timers.get(room), alert_onair=False))
