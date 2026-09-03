@@ -217,6 +217,7 @@ async def ws_handler(request):
                 tok = str(data.get("token", "")).strip().lower()
                 if tok:
                     ios_token[ws] = tok; apns_live.set_active(tok, bool(data.get("active")), data.get("alerts")); apns_live.set_lang(tok, data.get("lang"))
+                    apns_live.cancel_end(apns_live.device_of(tok))            # 앱이 살아있음 → 예약된 종료 취소
             elif t == "rtt" and room:                # 폰이 잰 서버 왕복 지연(ms) 보고 → 호스트에 전달
                 ms = int(data.get("ms", 0) or 0)
                 if 0 < ms < 100000 and not is_bridge:
@@ -228,7 +229,9 @@ async def ws_handler(request):
     finally:
         seen.pop(ws, None); ws_rtt.pop(ws, None)
         tok = ios_token.pop(ws, None)
-        if tok: apns_live.set_active(tok, False)      # 소켓이 끊기면(뒤로 감·종료) 푸시 재개
+        if tok:
+            apns_live.set_active(tok, False)          # 소켓이 끊기면(뒤로 감·종료) 푸시 재개
+            apns_live.schedule_end(apns_live.device_of(tok))   # 5초 안에 안 돌아오면 아일랜드 종료 (앱 스와이프 종료 대응)
         if room:
             if is_cueop:
                 cue_ops.get(room, set()).discard(ws)
@@ -265,7 +268,9 @@ async def reaper(app):
             for w in stale:
                 d.pop(w, None); rooms.get(room, set()).discard(w); seen.pop(w, None); ws_rtt.pop(w, None)
                 tok = ios_token.pop(w, None)
-                if tok: apns_live.set_active(tok, False)
+                if tok:
+                    apns_live.set_active(tok, False)
+                    apns_live.schedule_end(apns_live.device_of(tok))
                 try: await w.close()
                 except Exception: pass
             if stale:
@@ -300,6 +305,7 @@ async def ios_activity(request):
     if request.method == "DELETE":
         apns_live.unregister(token=token, device=device); return web.json_response({"ok": True})
     room = str(d.get("room", "")).strip().upper() or "DEFAULT"; cam = int(d.get("cam", 0) or 0)
+    apns_live.cancel_end(device)                       # 재접속·재등록 = 살아있음
     apns_live.register(room, cam, token, device)
     if "alerts" in d: apns_live.set_alerts(token, bool(d.get("alerts")))
     apns_live.set_lang(token, d.get("lang"))

@@ -30,7 +30,8 @@ _active: dict[str, bool] = {}       # token -> 앱이 앞에 떠 있음(앱이 �
 _alerts: dict[str, bool] = {}       # token -> 백그라운드 알림(진동·배너) 허용 (앱 안 '알림' 스위치)
 _lang: dict[str, str] = {}          # token -> 앱 언어(ko/en) — 알림 문구용
 _device_token: dict[str, str] = {}  # deviceId -> 현재 활성 토큰 (기기당 하나만 유지, 좀비 방지)
-_token_device: dict[str, str] = {}  # token -> deviceId         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
+_token_device: dict[str, str] = {}  # token -> deviceId
+_end_tasks: dict[str, asyncio.Task] = {}   # deviceId -> 유예 후 활동 종료 작업 (앱 종료·소켓 끊김 대비)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
 
 # room -> {token: cam}
@@ -66,6 +67,47 @@ def unregister(token: str = "", device: str = ""):
         tok = _device_token.get(device)
         if tok: _unregister_token(tok)
     if token: _unregister_token(token)
+
+
+def device_of(token: str) -> str:
+    return _token_device.get(token, "")
+
+
+async def _end_device(device: str, delay: float):
+    """소켓이 끊긴 뒤 delay초 안에 앱이 다시 살아나지 않으면 이 기기의 아일랜드를 강제 종료.
+    iOS는 앱을 스와이프로 완전히 꺼도 Live Activity를 남기므로, 서버가 대신 끝내준다."""
+    try:
+        await asyncio.sleep(delay)
+    except asyncio.CancelledError:
+        return
+    _end_tasks.pop(device, None)
+    token = _device_token.get(device)
+    if not token:
+        return
+    cam = next((c for d in _tokens.values() for t, c in d.items() if t == token), 0)
+    print(f"[apns] grace expired → end device {device[:8]} cam={cam}", flush=True)
+    if ENABLED:
+        now = int(time.time())
+        cs = content_state(cam, {"online": False}, None, None)
+        try:
+            await _send(token, {"aps": {"timestamp": now, "event": "end", "content-state": cs, "dismissal-date": now}})
+        except Exception as e:
+            print(f"[apns] end error: {e!r}", flush=True)
+    _unregister_token(token)
+
+
+def schedule_end(device: str, delay: float = 5):
+    """소켓 끊김 → 유예 타이머 시작 (같은 기기 타이머는 갱신)"""
+    if not device:
+        return
+    cancel_end(device)
+    _end_tasks[device] = asyncio.create_task(_end_device(device, delay))
+
+
+def cancel_end(device: str):
+    """앱이 살아있다는 신호(재접속·토큰 등록) → 종료 취소"""
+    t = _end_tasks.pop(device or "", None)
+    if t: t.cancel()
 
 
 def set_active(token: str, active: bool, alerts=None):
