@@ -121,8 +121,11 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
             continue                                   # 이 폰의 표시 내용이 그대로면 푸시 생략
         _last[token] = cs
         aps = {"timestamp": now, "event": "update", "content-state": cs, "relevance-score": 100 if cs["state"] == "pgm" else 50}
-        if alert_onair and cs["state"] == "pgm" and (prev or {}).get("state") != "pgm":
-            aps["alert"] = {"title": f"CAM {cam} ON AIR", "body": "지금 방송 중", "sound": "default"}   # 온에어로 '바뀔 때'만 알림
+        ps = (prev or {}).get("state")
+        if alert_onair and cs["state"] == "pgm" and ps != "pgm":
+            aps["alert"] = {"title": f"CAM {cam} ON AIR", "body": "지금 방송 중", "sound": "default"}   # 온에어로 '바뀔 때'만 알림(진동 1회)
+        elif alert_onair and cs["state"] == "pvw" and ps not in ("pvw", "pgm"):
+            aps["alert"] = {"title": f"CAM {cam} PREVIEW", "body": "다음 컷 대기", "sound": "default"}  # 프리뷰 진입도 알림 진동 1회
         tasks.append(_send(token, {"aps": aps}))
     if not tasks:
         return
