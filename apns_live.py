@@ -23,7 +23,9 @@ if not _key_pem and os.environ.get("APNS_KEY_PATH"):
     try: _key_pem = open(os.environ["APNS_KEY_PATH"]).read()
     except OSError: _key_pem = ""
 
-HOST = "https://api.push.apple.com" if ENV == "production" else "https://api.sandbox.push.apple.com"
+HOSTS = {"production": "https://api.push.apple.com", "sandbox": "https://api.sandbox.push.apple.com"}
+HOST = HOSTS.get(ENV, HOSTS["production"])
+_env_of: dict[str, str] = {}         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
 
 # room -> {token: cam}
@@ -42,6 +44,7 @@ def unregister(token: str):
     for d in _tokens.values():
         d.pop(token, None)
     _last.pop(token, None)
+    _env_of.pop(token, None)
 
 
 def count(room: str) -> int:
@@ -85,6 +88,7 @@ def content_state(cam: int, st: dict, note: dict | None, timer: dict | None) -> 
 
 
 async def _send(token: str, payload: dict):
+    """토큰의 환경(production/sandbox)을 모르면 기본 환경부터 시도하고, BadDeviceToken이면 반대 환경으로 한 번 더."""
     global _client
     import httpx
     if _client is None:
@@ -96,14 +100,23 @@ async def _send(token: str, payload: dict):
         "apns-priority": "10",
         "apns-expiration": "0",
     }
-    t0 = time.time()
-    r = await _client.post(f"{HOST}/3/device/{token}", headers=headers, content=json.dumps(payload))
-    print(f"[apns] {r.status_code} {int((time.time()-t0)*1000)}ms {payload['aps'].get('content-state',{}).get('state','')}", flush=True)
-    if r.status_code == 410 or (r.status_code == 400 and b"BadDeviceToken" in r.content):
-        unregister(token)                      # 활동 종료·앱 삭제 → 더 이상 보내지 않음
-    elif r.status_code >= 300:
-        print(f"[apns] {r.status_code} {r.text[:120]}", flush=True)
-
+    first = _env_of.get(token) or ENV
+    order = [first] + [e for e in HOSTS if e != first]
+    for env in order:
+        t0 = time.time()
+        r = await _client.post(f"{HOSTS[env]}/3/device/{token}", headers=headers, content=json.dumps(payload))
+        st = payload["aps"].get("content-state", {}).get("state", "")
+        if r.status_code == 200:
+            _env_of[token] = env
+            print(f"[apns] 200 {env} {int((time.time()-t0)*1000)}ms {st}", flush=True)
+            return
+        print(f"[apns] {r.status_code} {env} {int((time.time()-t0)*1000)}ms {st} {r.text[:80]}", flush=True)
+        if r.status_code == 410:
+            unregister(token); return                     # 활동 종료·앱 삭제
+        if r.status_code == 400 and b"BadDeviceToken" in r.content:
+            continue                                      # 환경이 다를 수 있음 → 다른 환경 시도
+        return                                            # 그 외 오류는 재시도 없음
+    unregister(token)                                     # 양쪽 다 거부 → 무효 토큰
 
 async def push_room(room: str, st: dict, note: dict | None = None, timer: dict | None = None, alert_onair=True):
     """방의 모든 아이폰에 현재 상태를 푸시. 온에어로 바뀐 폰에는 진동 알림도 붙인다."""
