@@ -10,6 +10,7 @@
 """
 import asyncio, json, os, time
 from aiohttp import web, WSMsgType
+import apns_live   # iOS Live Activity(다이나믹 아일랜드) 푸시
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE, "web")
@@ -158,11 +159,13 @@ async def ws_handler(request):
                                "pgm": pgm_list, "pvw": pvw_list, "online": True}
                 print(f"[{room}] PGM={pgm_list or state[room]['program']} PVW={pvw_list or state[room]['preview']}", flush=True)
                 await broadcast(room)
+                asyncio.create_task(apns_live.push_room(room, state[room], notes.get(room), timers.get(room)))
             elif t == "msg" and is_bridge and room:
                 text = str(data.get("text", ""))[:200]
                 notes[room] = {"text": text, "ts": now_ms()}
                 print(f"[{room}] MSG: {text}", flush=True)
                 await broadcast(room, msg_msg(room))
+                asyncio.create_task(apns_live.push_room(room, state.get(room, OFFLINE), notes.get(room), timers.get(room), alert_onair=False))
             elif t == "timer" and is_bridge and room:
                 act = data.get("action"); cur = {**EMPTY_TIMER, **timers.get(room, {})}
                 tgt = cur["target"]
@@ -179,6 +182,7 @@ async def ws_handler(request):
                 timers[room] = cur
                 print(f"[{room}] TIMER {act}: {cur}", flush=True)
                 await broadcast(room, timer_msg(room))
+                asyncio.create_task(apns_live.push_room(room, state.get(room, OFFLINE), notes.get(room), timers.get(room), alert_onair=False))
             elif t == "cue" and is_cueop and room:
                 if cue_set(room, data.get("ch", ""), data.get("state", "")):
                     print(f"[{room}] CUE {data.get('ch')} -> {data.get('state')}", flush=True)
@@ -222,6 +226,7 @@ async def ws_handler(request):
                     state[room] = dict(OFFLINE)
                     print(f"[bridge] left {room}", flush=True)
                     await broadcast(room)
+                    asyncio.create_task(apns_live.push_room(room, state[room], notes.get(room), timers.get(room), alert_onair=False))
                 else:
                     cams.get(room, {}).pop(ws, None)
                     print(f"[phone ] left {room}", flush=True)
@@ -261,6 +266,21 @@ async def index(request):
 async def health(request):
     return web.json_response({"ok": True, "rooms": len(rooms)})
 
+async def ios_activity(request):
+    """아이폰 앱이 Live Activity 푸시 토큰을 등록/해제. POST {room, cam, token} / DELETE {token}"""
+    try: d = await request.json()
+    except Exception: return web.json_response({"ok": False, "error": "json"}, status=400)
+    token = str(d.get("token", "")).strip().lower()
+    if not token: return web.json_response({"ok": False, "error": "token"}, status=400)
+    if request.method == "DELETE":
+        apns_live.unregister(token); return web.json_response({"ok": True})
+    room = str(d.get("room", "")).strip().upper() or "DEFAULT"; cam = int(d.get("cam", 0) or 0)
+    apns_live.register(room, cam, token)
+    print(f"[ios   ] activity {room} cam={cam} ({apns_live.count(room)} phones)", flush=True)
+    # 등록 직후 현재 상태를 한 번 보내 아일랜드가 바로 맞춰지게
+    asyncio.create_task(apns_live.push_room(room, state.get(room, OFFLINE), notes.get(room), timers.get(room), alert_onair=False))
+    return web.json_response({"ok": True, "push": apns_live.ENABLED})
+
 def make_app():
     """aiohttp Application은 이벤트 루프에 묶이므로, 내장 서버(호스트 앱)에서는 시작할 때마다 새로 만든다"""
     a = web.Application()
@@ -268,6 +288,8 @@ def make_app():
     a.router.add_get("/", index)
     a.router.add_get("/ws", ws_handler)
     a.router.add_get("/health", health)
+    a.router.add_post("/ios/activity", ios_activity)
+    a.router.add_delete("/ios/activity", ios_activity)
     a.router.add_static("/", WEB_DIR, show_index=False)
     return a
 
