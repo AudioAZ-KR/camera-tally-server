@@ -18,6 +18,7 @@
   #setup img { height: 84px; width: 84px; margin-bottom: 8px; }
   #setup input { width: 100%; margin-top: 6px; font-size: 22px; padding: 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--sunken); font-family: var(--mono); color: var(--text); text-align: center; }
   #setup button#go { width: 100%; max-width: 320px; font-size: 20px; padding: 16px; border-radius: 6px; border: 0; background: var(--brand); color: var(--bg); font-weight: bold; }
+  #setup #openApp { width: 100%; max-width: 320px; box-sizing: border-box; text-align: center; font-size: 16px; padding: 13px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-weight: 600; text-decoration: none; margin-top: -6px; }
   .langsel { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 12px; font-weight: bold; cursor: pointer; }
   #setup .langsel { position: absolute; top: calc(env(safe-area-inset-top) + 12px); right: 16px; }
 
@@ -103,6 +104,7 @@
   <label><span id="lblRoom">방 코드</span><input id="room" placeholder="STUDIO" autocapitalize="characters"></label>
   <label><span id="lblCam">내 카메라 번호</span><input id="cam" type="number" inputmode="numeric" placeholder="1" min="1" max="20"></label>
   <button id="go">접속</button>
+  <a id="openApp" style="display:none">앱으로 열기</a>
 </div>
 
 <div id="tally" class="off">
@@ -130,7 +132,7 @@ const qs = new URLSearchParams(location.search);
 // ===== 다국어 (8개 언어) — PGM/PVW/ON AIR/PREVIEW/ATEM/CAM 은 방송 공용 표기라 공통 =====
 const LANGS = [['en','English'],['ko','한국어'],['ja','日本語'],['zh','中文'],['es','Español'],['fr','Français'],['de','Deutsch'],['it','Italiano']];
 const I18N = {
-  ko: { title:'Flare Tally', room:'방 코드', cam:'내 카메라 번호', connect:'접속',
+  ko: { title:'Flare Tally', room:'방 코드', cam:'내 카메라 번호', connect:'접속', openApp:'앱으로 열기',
         send:'송출', wait:'대기', connecting:'연결 중', onair:'ON AIR', preview:'PREVIEW', standby:'대기',
         disconnected:'연결 끊김', atemOff:'ATEM 오프라인', reconnecting:'재연결 중…',
         clock:'현재 시각', targetTime:'목표 시각', timer:'타이머', timerOver:'타이머 초과', unset:'미설정',
@@ -138,7 +140,7 @@ const I18N = {
         settings:'설정', border:'테두리', full:'전체화면',
         roomWord:'방', connectedWord:'연결됨', onlineWord:'온라인', offlineWord:'오프라인(같은 Wi-Fi)',
         targetWord:'목표', untilWord:'까지', overWord:'초과' },
-  en: { title:'Flare Tally', room:'Room Code', cam:'My Camera No.', connect:'Connect',
+  en: { title:'Flare Tally', room:'Room Code', cam:'My Camera No.', connect:'Connect', openApp:'Open in app',
         send:'PGM', wait:'PVW', connecting:'Connecting', onair:'ON AIR', preview:'PREVIEW', standby:'Standby',
         disconnected:'Disconnected', atemOff:'ATEM Offline', reconnecting:'Reconnecting…',
         clock:'Current Time', targetTime:'Target Time', timer:'Timer', timerOver:'Timer Over', unset:'Not set',
@@ -146,7 +148,7 @@ const I18N = {
         settings:'Setup', border:'Border', full:'Fullscreen',
         roomWord:'Room', connectedWord:'Connected', onlineWord:'Online', offlineWord:'Offline (same Wi-Fi)',
         targetWord:'Target', untilWord:'left', overWord:'over' },
-  ja: { title:'Flare Tally', room:'ルームコード', cam:'自分のカメラ番号', connect:'接続',
+  ja: { title:'Flare Tally', room:'ルームコード', cam:'自分のカメラ番号', connect:'接続', openApp:'アプリで開く',
         send:'PGM', wait:'PVW', connecting:'接続中', onair:'ON AIR', preview:'PREVIEW', standby:'スタンバイ',
         disconnected:'接続が切れました', atemOff:'ATEM オフライン', reconnecting:'再接続中…',
         clock:'現在時刻', targetTime:'目標時刻', timer:'タイマー', timerOver:'タイマー超過', unset:'未設定',
@@ -154,7 +156,7 @@ const I18N = {
         settings:'設定', border:'枠線', full:'全画面',
         roomWord:'ルーム', connectedWord:'接続済み', onlineWord:'オンライン', offlineWord:'オフライン（同一Wi-Fi）',
         targetWord:'目標', untilWord:'まで', overWord:'超過' },
-  zh: { title:'Flare Tally', room:'房间代码', cam:'我的机位号', connect:'连接',
+  zh: { title:'Flare Tally', room:'房间代码', cam:'我的机位号', connect:'连接', openApp:'用 App 打开',
         send:'PGM', wait:'PVW', connecting:'连接中', onair:'ON AIR', preview:'PREVIEW', standby:'待机',
         disconnected:'连接断开', atemOff:'ATEM 离线', reconnecting:'重新连接中…',
         clock:'当前时间', targetTime:'目标时间', timer:'计时器', timerOver:'计时超时', unset:'未设置',
@@ -162,7 +164,7 @@ const I18N = {
         settings:'设置', border:'边框', full:'全屏',
         roomWord:'房间', connectedWord:'已连接', onlineWord:'在线', offlineWord:'离线（同一 Wi-Fi）',
         targetWord:'目标', untilWord:'剩余', overWord:'超时' },
-  es: { title:'Flare Tally', room:'Código de Sala', cam:'N.º de mi cámara', connect:'Conectar',
+  es: { title:'Flare Tally', room:'Código de Sala', cam:'N.º de mi cámara', connect:'Conectar', openApp:'Abrir en la app',
         send:'PGM', wait:'PVW', connecting:'Conectando', onair:'ON AIR', preview:'PREVIEW', standby:'En espera',
         disconnected:'Desconectado', atemOff:'ATEM sin conexión', reconnecting:'Reconectando…',
         clock:'Hora actual', targetTime:'Hora objetivo', timer:'Temporizador', timerOver:'Tiempo agotado', unset:'Sin definir',
@@ -170,7 +172,7 @@ const I18N = {
         settings:'Configuración', border:'Borde', full:'Pantalla completa',
         roomWord:'Sala', connectedWord:'Conectado', onlineWord:'En línea', offlineWord:'Sin conexión (misma Wi-Fi)',
         targetWord:'Objetivo', untilWord:'restante', overWord:'excedido' },
-  fr: { title:'Flare Tally', room:'Code de salle', cam:'N° de ma caméra', connect:'Connexion',
+  fr: { title:'Flare Tally', room:'Code de salle', cam:'N° de ma caméra', connect:'Connexion', openApp:'Ouvrir dans l’app',
         send:'PGM', wait:'PVW', connecting:'Connexion…', onair:'ON AIR', preview:'PREVIEW', standby:'En attente',
         disconnected:'Déconnecté', atemOff:'ATEM hors ligne', reconnecting:'Reconnexion…',
         clock:'Heure actuelle', targetTime:'Heure cible', timer:'Minuteur', timerOver:'Temps dépassé', unset:'Non défini',
@@ -178,7 +180,7 @@ const I18N = {
         settings:'Réglages', border:'Bordure', full:'Plein écran',
         roomWord:'Salle', connectedWord:'Connecté', onlineWord:'En ligne', offlineWord:'Hors ligne (même Wi-Fi)',
         targetWord:'Cible', untilWord:'restant', overWord:'dépassé' },
-  de: { title:'Flare Tally', room:'Raumcode', cam:'Meine Kameranr.', connect:'Verbinden',
+  de: { title:'Flare Tally', room:'Raumcode', cam:'Meine Kameranr.', connect:'Verbinden', openApp:'In der App öffnen',
         send:'PGM', wait:'PVW', connecting:'Verbinden…', onair:'ON AIR', preview:'PREVIEW', standby:'Bereitschaft',
         disconnected:'Getrennt', atemOff:'ATEM offline', reconnecting:'Neu verbinden…',
         clock:'Aktuelle Zeit', targetTime:'Zielzeit', timer:'Timer', timerOver:'Timer abgelaufen', unset:'Nicht gesetzt',
@@ -186,7 +188,7 @@ const I18N = {
         settings:'Einrichtung', border:'Rahmen', full:'Vollbild',
         roomWord:'Raum', connectedWord:'Verbunden', onlineWord:'Online', offlineWord:'Offline (gleiches WLAN)',
         targetWord:'Ziel', untilWord:'übrig', overWord:'über' },
-  it: { title:'Flare Tally', room:'Codice sala', cam:'N. mia telecamera', connect:'Connetti',
+  it: { title:'Flare Tally', room:'Codice sala', cam:'N. mia telecamera', connect:'Connetti', openApp:'Apri nell’app',
         send:'PGM', wait:'PVW', connecting:'Connessione…', onair:'ON AIR', preview:'PREVIEW', standby:'In attesa',
         disconnected:'Disconnesso', atemOff:'ATEM offline', reconnecting:'Riconnessione…',
         clock:'Ora attuale', targetTime:'Ora obiettivo', timer:'Timer', timerOver:'Tempo scaduto', unset:'Non impostato',
@@ -335,6 +337,26 @@ async function keepAwake() {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); if (ws && ws.readyState !== 1 && $('tally').style.display === 'flex') connect(); } });
 }
 applyLang();
+// iOS/iPadOS: '앱으로 열기' — 앱 있으면 방·카메라 전달해 열고, 없으면 다운로드 페이지로
+(function(){
+  const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (!iOS) return;
+  const btn = $('openApp'); if (!btn) return;
+  btn.textContent = t('openApp');
+  btn.style.display = 'block';
+  btn.onclick = (e) => {
+    e.preventDefault();
+    const room = ($('room').value || '').trim().toUpperCase();
+    const cam = ($('cam').value || '').trim();
+    const scheme = 'flaretally://join?room=' + encodeURIComponent(room) + (cam ? '&cam=' + encodeURIComponent(cam) : '');
+    const store = 'https://audioazpro.com/product-flare-tally.html';   // 앱 미설치 시 (출시 후 App Store로 교체)
+    let hidden = false;
+    const onHide = () => { hidden = true; };
+    document.addEventListener('visibilitychange', onHide, { once: true });
+    setTimeout(() => { if (!hidden) location.href = store; document.removeEventListener('visibilitychange', onHide); }, 1400);
+    location.href = scheme;
+  };
+})();
 if ($('room').value && $('cam').value && qs.get('auto')) $('go').click();
 </script>
 </body>
