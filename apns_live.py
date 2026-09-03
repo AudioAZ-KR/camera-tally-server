@@ -118,6 +118,14 @@ async def _send(token: str, payload: dict):
         return                                            # 그 외 오류는 재시도 없음
     unregister(token)                                     # 양쪽 다 거부 → 무효 토큰
 
+async def _send_repeat(token: str, payload: dict, times: int, gap: float):
+    """같은 알림을 짧은 간격으로 여러 번 → 백그라운드에서 '톡톡톡' 느낌. 매번 timestamp를 올려 iOS가 새 갱신으로 받게 한다."""
+    for i in range(times):
+        p = json.loads(json.dumps(payload)); p["aps"]["timestamp"] = int(time.time()) + i
+        await _send(token, p)
+        if i < times - 1: await asyncio.sleep(gap)
+
+
 async def push_room(room: str, st: dict, note: dict | None = None, timer: dict | None = None, alert_onair=True):
     """방의 모든 아이폰에 현재 상태를 푸시. 온에어로 바뀐 폰에는 진동 알림도 붙인다."""
     if not ENABLED:
@@ -138,7 +146,9 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
         if alert_onair and cs["state"] == "pgm" and ps != "pgm":
             aps["alert"] = {"title": f"CAM {cam} ON AIR", "body": "지금 방송 중", "sound": "default"}   # 온에어로 '바뀔 때'만 알림(진동 1회)
         elif alert_onair and cs["state"] == "pvw" and ps not in ("pvw", "pgm"):
-            aps["alert"] = {"title": f"CAM {cam} PREVIEW", "body": "다음 컷 대기", "sound": "default"}  # 프리뷰 진입도 알림 진동 1회
+            aps["alert"] = {"title": f"CAM {cam} PREVIEW", "body": "다음 컷 대기", "sound": "default"}
+            tasks.append(_send_repeat(token, {"aps": aps}, times=3, gap=0.35))   # 프리뷰 진입 = 진동 3번(알림 푸시 3연타)
+            continue
         tasks.append(_send(token, {"aps": aps}))
     if not tasks:
         return
