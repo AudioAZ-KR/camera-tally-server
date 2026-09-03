@@ -28,7 +28,9 @@ HOST = HOSTS.get(ENV, HOSTS["production"])
 _env_of: dict[str, str] = {}
 _active: dict[str, bool] = {}       # token -> 앱이 앞에 떠 있음(앱이 직접 갱신·햅틱하므로 푸시 생략)
 _alerts: dict[str, bool] = {}       # token -> 백그라운드 알림(진동·배너) 허용 (앱 안 '알림' 스위치)
-_lang: dict[str, str] = {}          # token -> 앱 언어(ko/en) — 알림 문구용         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
+_lang: dict[str, str] = {}          # token -> 앱 언어(ko/en) — 알림 문구용
+_device_token: dict[str, str] = {}  # deviceId -> 현재 활성 토큰 (기기당 하나만 유지, 좀비 방지)
+_token_device: dict[str, str] = {}  # token -> deviceId         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
 
 # room -> {token: cam}
@@ -38,19 +40,32 @@ _jwt_cache = {"token": "", "ts": 0.0}
 _client = None
 
 
-def register(room: str, cam: int, token: str):
+def register(room: str, cam: int, token: str, device: str = ""):
     room = (room or "").strip().upper() or "DEFAULT"
+    if device:
+        old = _device_token.get(device)
+        if old and old != token:
+            _unregister_token(old)                 # 같은 기기의 이전(좀비) 토큰 제거
+        _device_token[device] = token; _token_device[token] = device
     _tokens.setdefault(room, {})[token] = int(cam)
 
 
-def unregister(token: str):
+def _unregister_token(token: str):
     for d in _tokens.values():
         d.pop(token, None)
-    _last.pop(token, None)
-    _env_of.pop(token, None)
-    _active.pop(token, None)
-    _alerts.pop(token, None)
-    _lang.pop(token, None)
+    for m in (_last, _env_of, _active, _alerts, _lang):
+        m.pop(token, None)
+    dev = _token_device.pop(token, None)
+    if dev and _device_token.get(dev) == token:
+        _device_token.pop(dev, None)
+
+
+def unregister(token: str = "", device: str = ""):
+    """토큰 하나 또는 기기(deviceId)에 딸린 모든 토큰 해제 — 나가기 시 좀비까지 확실히 정리"""
+    if device:
+        tok = _device_token.get(device)
+        if tok: _unregister_token(tok)
+    if token: _unregister_token(token)
 
 
 def set_active(token: str, active: bool, alerts=None):
@@ -170,15 +185,14 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
             continue                                   # 앱이 앞에 있음: 소켓으로 즉시 갱신·앱 햅틱 → 푸시(알림 진동) 생략
         aps = {"timestamp": now, "event": "update", "content-state": cs, "relevance-score": 100 if cs["state"] == "pgm" else 50}
         ps = (prev or {}).get("state")
-        if not _alerts.get(token, True):
-            alert_onair = False                        # 앱에서 '알림' 끔 → 조용히 갱신만
+        do_alert = alert_onair and _alerts.get(token, True)     # 이 폰의 알림 스위치 (루프 지역 변수 — 다른 폰에 영향 없음)
         m = _MSG.get(_lang.get(token, "ko"), _MSG["ko"])
         def alert(kind): t, b = m[kind]; return {"title": t.format(cam=cam), "body": b, "sound": "default"}
-        if alert_onair and cs["state"] == "pgm" and ps != "pgm":
+        if do_alert and cs["state"] == "pgm" and ps != "pgm":
             aps["alert"] = alert("pgm")                    # 온에어로 '바뀔 때'만 알림(진동 1회)
-        elif alert_onair and cs["state"] == "idle" and ps == "pgm":
+        elif do_alert and cs["state"] == "idle" and ps == "pgm":
             aps["alert"] = alert("idle")                   # 온에어 해제 = 진동 1회
-        elif alert_onair and cs["state"] == "pvw" and ps not in ("pvw", "pgm"):
+        elif do_alert and cs["state"] == "pvw" and ps not in ("pvw", "pgm"):
             aps["alert"] = alert("pvw")
             tasks.append(_send_repeat(token, {"aps": aps}, times=3, gap=0.15))   # 프리뷰 진입 = 진동 3번(알림 푸시 3연타)
             continue
