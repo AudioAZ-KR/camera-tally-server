@@ -219,6 +219,8 @@ async def ws_handler(request):
                 if tok:
                     ios_token[ws] = tok; token_ws[tok] = ws
                     apns_live.set_active(tok, bool(data.get("active")), data.get("alerts")); apns_live.set_lang(tok, data.get("lang"))
+                    if data.get("push"): apns_live.set_push(tok, str(data["push"]).strip().lower())
+                    if "banner" in data: apns_live.set_banner(tok, bool(data.get("banner")))
                     apns_live.cancel_end(apns_live.device_of(tok))            # 앱이 살아있음 → 예약된 종료 취소
             elif t == "rtt" and room:                # 폰이 잰 서버 왕복 지연(ms) 보고 → 호스트에 전달
                 ms = int(data.get("ms", 0) or 0)
@@ -314,6 +316,8 @@ async def ios_activity(request):
     apns_live.cancel_end(device)                       # 재접속·재등록 = 살아있음
     apns_live.register(room, cam, token, device)
     if "alerts" in d: apns_live.set_alerts(token, bool(d.get("alerts")))
+    if d.get("push"): apns_live.set_push(token, str(d["push"]).strip().lower())
+    if "banner" in d: apns_live.set_banner(token, bool(d.get("banner")))
     apns_live.set_lang(token, d.get("lang"))
     print(f"[ios   ] activity {room} cam={cam} ({apns_live.count(room)} phones)", flush=True)
     # 등록 직후 현재 상태를 한 번 보내 아일랜드가 바로 맞춰지게

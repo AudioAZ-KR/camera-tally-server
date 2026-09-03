@@ -31,7 +31,9 @@ _alerts: dict[str, bool] = {}       # token -> 백그라운드 알림(진동·�
 _lang: dict[str, str] = {}          # token -> 앱 언어(ko/en) — 알림 문구용
 _device_token: dict[str, str] = {}  # deviceId -> 현재 활성 토큰 (기기당 하나만 유지, 좀비 방지)
 _token_device: dict[str, str] = {}  # token -> deviceId
-_end_tasks: dict[str, asyncio.Task] = {}   # deviceId -> 유예 후 활동 종료 작업 (앱 종료·소켓 끊김 대비)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
+_end_tasks: dict[str, asyncio.Task] = {}
+_push_tok: dict[str, str] = {}      # LA token -> 일반 알림용 기기 토큰 (가로 화면 배너)
+_banner: dict[str, bool] = {}       # LA token -> 배너 모드(앱 '배너' 스위치): 가로 화면에선 아일랜드가 안 그려지므로 일반 알림 배너로   # deviceId -> 유예 후 활동 종료 작업 (앱 종료·소켓 끊김 대비)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
 
 # room -> {token: cam}
@@ -54,7 +56,7 @@ def register(room: str, cam: int, token: str, device: str = ""):
 def _unregister_token(token: str):
     for d in _tokens.values():
         d.pop(token, None)
-    for m in (_last, _env_of, _active, _alerts, _lang):
+    for m in (_last, _env_of, _active, _alerts, _lang, _push_tok, _banner):
         m.pop(token, None)
     dev = _token_device.pop(token, None)
     if dev and _device_token.get(dev) == token:
@@ -118,6 +120,14 @@ def set_active(token: str, active: bool, alerts=None):
 
 def set_alerts(token: str, alerts: bool):
     if token: _alerts[token] = bool(alerts)
+
+
+def set_push(token: str, hex_: str):
+    if token and hex_: _push_tok[token] = hex_
+
+
+def set_banner(token: str, on: bool):
+    if token: _banner[token] = bool(on)
 
 
 def set_lang(token: str, lang):
@@ -199,6 +209,25 @@ async def _send(token: str, payload: dict):
         return                                            # 그 외 오류는 재시도 없음
     unregister(token)                                     # 양쪽 다 거부 → 무효 토큰
 
+async def _send_banner(la_token: str, dev_token: str, title: str, body: str, collapse: str):
+    """일반 알림 푸시(배너). iOS는 가로 화면에서 다이나믹 아일랜드를 그리지 않으므로 촬영 앱을 가로로 쓸 때 이걸로 탈리를 알린다."""
+    global _client
+    import httpx
+    if _client is None:
+        _client = httpx.AsyncClient(http2=True, timeout=10)
+    headers = {"authorization": f"bearer {_jwt()}", "apns-topic": BUNDLE_ID, "apns-push-type": "alert",
+               "apns-priority": "10", "apns-expiration": "0", "apns-collapse-id": collapse}
+    payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default"}}
+    first = _env_of.get(la_token) or ENV
+    for env in [first] + [e for e in HOSTS if e != first]:
+        r = await _client.post(f"{HOSTS[env]}/3/device/{dev_token}", headers=headers, content=json.dumps(payload))
+        print(f"[apns] banner {r.status_code} {env} {title}", flush=True)
+        if r.status_code == 200: return
+        if r.status_code == 400 and b"BadDeviceToken" in r.content: continue
+        if r.status_code == 410: _push_tok.pop(la_token, None)
+        return
+
+
 async def _send_repeat(token: str, payload: dict, times: int, gap: float):
     """같은 알림을 짧은 간격으로 여러 번 → 백그라운드에서 '톡톡톡' 느낌. 매번 timestamp를 올려 iOS가 새 갱신으로 받게 한다."""
     async def one(i):
@@ -230,6 +259,13 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
         do_alert = alert_onair and _alerts.get(token, True)     # 이 폰의 알림 스위치 (루프 지역 변수 — 다른 폰에 영향 없음)
         m = _MSG.get(_lang.get(token, "ko"), _MSG["ko"])
         def alert(kind): t, b = m[kind]; return {"title": t.format(cam=cam), "body": b, "sound": "default"}
+        kind = "pgm" if (cs["state"] == "pgm" and ps != "pgm") else "idle" if (cs["state"] == "idle" and ps == "pgm") else "pvw" if (cs["state"] == "pvw" and ps not in ("pvw", "pgm")) else None
+        if alert_onair and kind and _banner.get(token) and _push_tok.get(token):
+            # 배너 모드: 일반 알림 1건(가로에서도 보임, 진동 1회) + 아일랜드는 알림 없이 갱신 (이중 진동 방지)
+            t_, b_ = m[kind]
+            tasks.append(_send_banner(token, _push_tok[token], t_.format(cam=cam), b_, f"tally-{cam}"))
+            tasks.append(_send(token, {"aps": aps}))
+            continue
         if do_alert and cs["state"] == "pgm" and ps != "pgm":
             aps["alert"] = alert("pgm")                    # 온에어로 '바뀔 때'만 알림(진동 1회)
         elif do_alert and cs["state"] == "idle" and ps == "pgm":
