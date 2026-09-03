@@ -28,6 +28,7 @@ ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
 
 # room -> {token: cam}
 _tokens: dict[str, dict[str, int]] = {}
+_last: dict[str, dict] = {}          # token -> 마지막으로 보낸 content-state (같으면 안 보냄: iOS 갱신 예산 절약 = 지연 감소)
 _jwt_cache = {"token": "", "ts": 0.0}
 _client = None
 
@@ -40,6 +41,7 @@ def register(room: str, cam: int, token: str):
 def unregister(token: str):
     for d in _tokens.values():
         d.pop(token, None)
+    _last.pop(token, None)
 
 
 def count(room: str) -> int:
@@ -94,7 +96,9 @@ async def _send(token: str, payload: dict):
         "apns-priority": "10",
         "apns-expiration": "0",
     }
+    t0 = time.time()
     r = await _client.post(f"{HOST}/3/device/{token}", headers=headers, content=json.dumps(payload))
+    print(f"[apns] {r.status_code} {int((time.time()-t0)*1000)}ms {payload['aps'].get('content-state',{}).get('state','')}", flush=True)
     if r.status_code == 410 or (r.status_code == 400 and b"BadDeviceToken" in r.content):
         unregister(token)                      # 활동 종료·앱 삭제 → 더 이상 보내지 않음
     elif r.status_code >= 300:
@@ -112,10 +116,16 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
     tasks = []
     for token, cam in list(regs.items()):
         cs = content_state(cam, st, note, timer)
+        prev = _last.get(token)
+        if prev == cs:
+            continue                                   # 이 폰의 표시 내용이 그대로면 푸시 생략
+        _last[token] = cs
         aps = {"timestamp": now, "event": "update", "content-state": cs, "relevance-score": 100 if cs["state"] == "pgm" else 50}
-        if alert_onair and cs["state"] == "pgm":
-            aps["alert"] = {"title": f"CAM {cam} ON AIR", "body": "지금 방송 중", "sound": "default"}
+        if alert_onair and cs["state"] == "pgm" and (prev or {}).get("state") != "pgm":
+            aps["alert"] = {"title": f"CAM {cam} ON AIR", "body": "지금 방송 중", "sound": "default"}   # 온에어로 '바뀔 때'만 알림
         tasks.append(_send(token, {"aps": aps}))
+    if not tasks:
+        return
     try:
         await asyncio.gather(*tasks)
     except Exception as e:
