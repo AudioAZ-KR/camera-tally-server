@@ -25,7 +25,8 @@ if not _key_pem and os.environ.get("APNS_KEY_PATH"):
 
 HOSTS = {"production": "https://api.push.apple.com", "sandbox": "https://api.sandbox.push.apple.com"}
 HOST = HOSTS.get(ENV, HOSTS["production"])
-_env_of: dict[str, str] = {}         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
+_env_of: dict[str, str] = {}
+_active: dict[str, bool] = {}       # token -> 앱이 앞에 떠 있음(앱이 직접 갱신·햅틱하므로 푸시 생략)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
 
 # room -> {token: cam}
@@ -45,6 +46,11 @@ def unregister(token: str):
         d.pop(token, None)
     _last.pop(token, None)
     _env_of.pop(token, None)
+    _active.pop(token, None)
+
+
+def set_active(token: str, active: bool):
+    if token: _active[token] = bool(active)
 
 
 def count(room: str) -> int:
@@ -142,10 +148,14 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
         if prev == cs:
             continue                                   # 이 폰의 표시 내용이 그대로면 푸시 생략
         _last[token] = cs
+        if _active.get(token):
+            continue                                   # 앱이 앞에 있음: 소켓으로 즉시 갱신·앱 햅틱 → 푸시(알림 진동) 생략
         aps = {"timestamp": now, "event": "update", "content-state": cs, "relevance-score": 100 if cs["state"] == "pgm" else 50}
         ps = (prev or {}).get("state")
         if alert_onair and cs["state"] == "pgm" and ps != "pgm":
             aps["alert"] = {"title": f"CAM {cam} ON AIR", "body": "지금 방송 중", "sound": "default"}   # 온에어로 '바뀔 때'만 알림(진동 1회)
+        elif alert_onair and cs["state"] == "idle" and ps == "pgm":
+            aps["alert"] = {"title": f"CAM {cam} 대기", "body": "온에어 해제", "sound": "default"}   # 온에어 해제 = 진동 1회
         elif alert_onair and cs["state"] == "pvw" and ps not in ("pvw", "pgm"):
             aps["alert"] = {"title": f"CAM {cam} PREVIEW", "body": "다음 컷 대기", "sound": "default"}
             tasks.append(_send_repeat(token, {"aps": aps}, times=3, gap=0.15))   # 프리뷰 진입 = 진동 3번(알림 푸시 3연타)

@@ -20,6 +20,7 @@ rooms: dict[str, set] = {}     # room -> set(ws)  (탈리 브로드캐스트 대
 bridges: dict[str, set] = {}   # room -> set(ws)  (호스트/브릿지 연결)
 cams: dict[str, dict] = {}     # room -> {ws: cam_number}  (접속한 폰)
 seen: dict = {}                # ws -> 마지막 수신 시각 (응답 없는 폰 정리용)
+ios_token: dict = {}           # ws -> 아이폰 Live Activity 토큰 (전면/후면 판단용)
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -203,10 +204,16 @@ async def ws_handler(request):
                     cur["ack"] = True
                     print(f"[{room}] ACK {ch}", flush=True)
                     await cue_broadcast(room)
+            elif t == "ios" and room:                # 아이폰 앱: 전면/후면 상태 (전면이면 알림 푸시 생략)
+                tok = str(data.get("token", "")).strip().lower()
+                if tok:
+                    ios_token[ws] = tok; apns_live.set_active(tok, bool(data.get("active")))
             elif t == "ping":
                 await ws.send_str('{"type":"pong"}')
     finally:
         seen.pop(ws, None)
+        tok = ios_token.pop(ws, None)
+        if tok: apns_live.set_active(tok, False)      # 소켓이 끊기면(뒤로 감·종료) 푸시 재개
         if room:
             if is_cueop:
                 cue_ops.get(room, set()).discard(ws)
@@ -242,6 +249,8 @@ async def reaper(app):
             stale = [w for w in list(d) if now - seen.get(w, 0) > STALE_SEC]
             for w in stale:
                 d.pop(w, None); rooms.get(room, set()).discard(w); seen.pop(w, None)
+                tok = ios_token.pop(w, None)
+                if tok: apns_live.set_active(tok, False)
                 try: await w.close()
                 except Exception: pass
             if stale:
