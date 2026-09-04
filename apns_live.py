@@ -100,7 +100,7 @@ async def _end_device(device: str, delay: float):
     _unregister_token(token)
 
 
-def schedule_end(device: str, delay: float = 5):
+def schedule_end(device: str, delay: float = 0.7):
     """소켓 끊김 → 유예 타이머 시작 (같은 기기 타이머는 갱신)"""
     if not device:
         return
