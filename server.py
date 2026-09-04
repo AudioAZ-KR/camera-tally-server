@@ -23,7 +23,50 @@ seen: dict = {}                # ws -> 마지막 수신 시각 (응답 없는 �
 ios_token: dict = {}           # ws -> 아이폰 Live Activity 토큰 (전면/후면 판단용)
 ws_rtt: dict = {}              # ws -> 서버 왕복 지연 ms (폰이 보고)
 token_ws: dict = {}            # token -> 이 토큰을 마지막으로 보고한 소켓 (재접속하면 새 소켓이 소유권을 가짐)
-SERVER_VER = "2026-09-04.5"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+# ---- 호스트(브릿지) 라이선스/데모 ----
+# 라이선스 있는 호스트: join.auth = {"token": Supabase access_token, "device": 기기ID} → 서버가 계정 권한으로 activations 확인
+# 데모 호스트:         join.auth = {"demo": 기기ID} → 기기별 하루 DEMO_LIMIT_SEC(기본 1시간)만 온라인 허용, 초과 시 끊고 그날은 거부
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://lkbbenyvchddsjsihofv.supabase.co")
+SUPABASE_ANON = os.environ.get("SUPABASE_ANON", "sb_publishable_sMTkTGD-1CktZQqirrjk6Q_0mxgpRG_")   # 공개(publishable) 키
+DEMO_LIMIT_SEC = int(os.environ.get("DEMO_LIMIT_SEC", "3600"))
+demo_used: dict = {}           # (device, YYYY-MM-DD UTC) -> 오늘 사용한 초 (메모리; 재배포 시 초기화)
+bridge_meta: dict = {}         # bridge ws -> {"mode": "licensed"|"demo", "device": ...}
+
+def _today():
+    return time.strftime("%Y-%m-%d", time.gmtime())
+
+async def verify_license(token: str, device: str) -> bool:
+    """호스트가 보낸 계정 토큰으로 이 기기의 활성 등록(activations)이 있는지 Supabase에 확인 (RLS: 본인 라이선스만 보임)."""
+    if not token or not device: return False
+    try:
+        import aiohttp as _aio
+        url = (SUPABASE_URL + "/rest/v1/activations?select=id,binding_id,licenses(status,product_id,expires_at)&binding_id=eq." + device)
+        async with _aio.ClientSession() as sess:
+            async with sess.get(url, headers={"apikey": SUPABASE_ANON, "Authorization": "Bearer " + token}, timeout=_aio.ClientTimeout(total=6)) as r:
+                if r.status != 200: return False
+                rows = await r.json()
+        for a in rows or []:
+            lic = a.get("licenses") or {}
+            if lic.get("product_id") == "TALLY" and lic.get("status") == "active":
+                exp = lic.get("expires_at")
+                if not exp: return True
+                try:
+                    import datetime
+                    if datetime.datetime.fromisoformat(exp.replace("Z", "+00:00")).timestamp() > time.time(): return True
+                except Exception: return True
+        return False
+    except Exception as e:
+        print(f"[lic   ] verify error {e!r}", flush=True); return False
+
+def demo_left(device: str) -> int:
+    return max(0, DEMO_LIMIT_SEC - int(demo_used.get((device, _today()), 0)))
+
+async def demo_close(ws, room):
+    try: await ws.send_str(json.dumps({"type": "demo_limit", "left": 0}))
+    except Exception: pass
+    try: await ws.close()
+    except Exception: pass
+SERVER_VER = "2026-09-04.6"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -147,10 +190,18 @@ async def ws_handler(request):
                     await ws.send_str(cue_msg(room))
                     await cue_ops_send(room, cue_roster_msg(room))
                 elif is_bridge:
+                    auth = data.get("auth") or {}
+                    mode = "licensed" if await verify_license(str(auth.get("token", "")), str(auth.get("device", ""))) else "demo"
+                    device = str(auth.get("device") or auth.get("demo") or ("ip-" + (request.remote or "?")))[:64]
+                    if mode == "demo" and demo_left(device) <= 0:
+                        print(f"[bridge] demo limit refused {room} dev={device}", flush=True)
+                        await ws.send_str(json.dumps({"type": "demo_limit", "left": 0})); await ws.close(); return ws
+                    bridge_meta[ws] = {"mode": mode, "device": device, "room": room}
                     rooms.setdefault(room, set()).add(ws)
                     bridges.setdefault(room, set()).add(ws)
                     state[room] = {"program": 0, "preview": 0, "pgm": [], "pvw": [], "online": True}
-                    print(f"[bridge] joined {room}", flush=True)
+                    print(f"[bridge] joined {room} mode={mode} dev={device}" + (f" demo_left={demo_left(device)}s" if mode == "demo" else ""), flush=True)
+                    await ws.send_str(json.dumps({"type": "joined", "mode": mode, "demo_left": demo_left(device) if mode == "demo" else None}))
                     await broadcast(room)
                     await ws.send_str(json.dumps({"type": "roster", "cams": roster(room), "rtt": roster_rtt(room)}))
                     await ws.send_str(msg_msg(room)); await ws.send_str(timer_msg(room))
@@ -234,7 +285,7 @@ async def ws_handler(request):
                 ts = data.get("t")
                 await ws.send_str(json.dumps({"type": "pong", "t": ts}) if ts is not None else '{"type":"pong"}')
     finally:
-        seen.pop(ws, None); ws_rtt.pop(ws, None)
+        seen.pop(ws, None); ws_rtt.pop(ws, None); bridge_meta.pop(ws, None)
         tok = ios_token.pop(ws, None)
         if tok and token_ws.get(tok) is ws:           # 이 소켓이 아직 토큰 소유자일 때만 (재접속했으면 새 소켓 담당)
             token_ws.pop(tok, None)
@@ -272,10 +323,19 @@ async def ws_handler(request):
     return ws
 
 async def reaper(app):
-    """응답 없는 폰을 주기적으로 정리해 접속 현황을 최신으로 유지"""
+    """응답 없는 폰을 주기적으로 정리해 접속 현황을 최신으로 유지 + 데모 호스트 온라인 시간 차감"""
     while True:
         await asyncio.sleep(5)
         now = time.time()
+        for bws, meta in list(bridge_meta.items()):
+            if meta.get("mode") != "demo": continue
+            k = (meta["device"], _today()); demo_used[k] = demo_used.get(k, 0) + 5
+            if demo_used[k] >= DEMO_LIMIT_SEC:
+                print(f"[bridge] demo limit reached {meta['room']} dev={meta['device']} → close", flush=True)
+                bridge_meta.pop(bws, None); await demo_close(bws, meta["room"])
+            elif demo_used[k] % 60 == 0:
+                try: await bws.send_str(json.dumps({"type": "demo_left", "left": DEMO_LIMIT_SEC - demo_used[k]}))
+                except Exception: pass
         for room, d in list(cams.items()):
             stale = [w for w in list(d) if now - seen.get(w, 0) > STALE_SEC]
             for w in stale:
