@@ -23,7 +23,7 @@ seen: dict = {}                # ws -> 마지막 수신 시각 (응답 없는 �
 ios_token: dict = {}           # ws -> 아이폰 Live Activity 토큰 (전면/후면 판단용)
 ws_rtt: dict = {}              # ws -> 서버 왕복 지연 ms (폰이 보고)
 token_ws: dict = {}            # token -> 이 토큰을 마지막으로 보고한 소켓 (재접속하면 새 소켓이 소유권을 가짐)
-SERVER_VER = "2026-09-04.3"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-04.4"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -298,8 +298,22 @@ async def reaper(app):
                 print(f"[{room}] 응답 없는 큐 수신기 {len(stale)}대 정리", flush=True)
                 await cue_ops_send(room, cue_roster_msg(room))
 
+async def demo_host(app):
+    """방 DEMO 가상 호스트: 호스트 앱·스위처 없이 앱을 체험(앱스토어 심사 포함)할 수 있게 4대 카메라를 4초마다 순환."""
+    room = "DEMO"; i = 0
+    while True:
+        await asyncio.sleep(4)
+        if not rooms.get(room) and not cams.get(room) and not apns_live.count(room):
+            continue                                     # 아무도 없으면 조용히
+        pgm = (i % 4) + 1; pvw = (pgm % 4) + 1; i += 1
+        state[room] = {"program": pgm, "preview": pvw, "pgm": [pgm], "pvw": [pvw], "online": True}
+        if not notes.get(room): notes[room] = {"text": "DEMO — 4초마다 자동 전환 / auto-cycling every 4s", "ts": now_ms()}
+        await broadcast(room)
+        asyncio.create_task(apns_live.push_room(room, state[room], notes.get(room), timers.get(room)))
+
 async def start_bg(app):
     app["reaper"] = asyncio.create_task(reaper(app))
+    app["demo"] = asyncio.create_task(demo_host(app))
 
 async def index(request):
     return web.FileResponse(os.path.join(WEB_DIR, "index.html"), headers={"Cache-Control": "no-cache"})
