@@ -199,7 +199,7 @@ document.querySelectorAll('.langsel').forEach(sel => sel.onchange = () => setLan
 let camCount = parseInt(localStorage.camCount) || 4, curCode = '';
 function renderCams() {
   $('camCount').textContent = camCount; localStorage.camCount = camCount;
-  $('cams').innerHTML = Array.from({length: camCount}, (_, i) => i + 1).map(n => `<a href="${base}/tally.html?room=${curCode}&cam=${n}&auto=1" target="_blank">CAM ${n}</a>`).join('');
+  $('cams').innerHTML = Array.from({length: camCount}, (_, i) => i + 1).map(n => `<a href="${base}/tally.html?room=${encodeURIComponent(curCode)}&cam=${n}&auto=1" target="_blank">CAM ${n}</a>`).join('');
 }
 $('minus').onclick = () => { if (camCount > 1) { camCount--; renderCams(); } };
 $('plus').onclick  = () => { if (camCount < 20) { camCount++; renderCams(); } };

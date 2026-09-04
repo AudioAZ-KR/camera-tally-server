@@ -32,16 +32,59 @@ SUPABASE_ANON = os.environ.get("SUPABASE_ANON", "sb_publishable_sMTkTGD-1CktZQqi
 DEMO_DAYS = float(os.environ.get("DEMO_DAYS", "7"))
 demo_first: dict = {}          # device -> 데모 최초 확인 epoch (메모리; 재배포 시 초기화 — 앱이 보내는 started가 1차 근거)
 bridge_meta: dict = {}         # bridge ws -> {"mode": "licensed"|"demo", "device": ...}
+# ---- 보안 보강 (2026-09-05 점검) ----
+import re as _re, hashlib as _hl
+from urllib.parse import quote as _q
+ROOM_HOLD_SEC = 3600           # 호스트가 끊긴 뒤 이 시간 동안은 방 소유권 유지(재접속 보호)
+MAX_ROOMS = 5000               # 방 수 상한(메모리 고갈 방지)
+JOIN_LIMIT = 120               # IP당 1분 join 상한
+MAX_IOS_PER_ROOM = 64
+room_owner: dict = {}          # room -> {"key": sha256(room_key), "ts": 마지막 브릿지 확인}
+join_hits: dict = {}           # ip -> [count, window_start]
+_ID_RE = _re.compile(r"^[A-Za-z0-9._:@-]{1,64}$")
+_ROOM_RE = _re.compile(r"^[A-Z0-9_-]{1,16}$")
+_TOKEN_RE = _re.compile(r"^[0-9a-f]{16,256}$")
+
+def _i(x, d=0, lo=None, hi=None):
+    """클라이언트 값 → int (잘못된 값은 기본값, 예외로 소켓이 끊기지 않게)"""
+    try: v = int(x)
+    except (TypeError, ValueError): v = d
+    if lo is not None and v < lo: v = lo
+    if hi is not None and v > hi: v = hi
+    return v
+
+def _rate_ok(ip):
+    now = time.time(); h = join_hits.get(ip)
+    if not h or now - h[1] > 60: join_hits[ip] = [1, now]; return True
+    h[0] += 1; return h[0] <= JOIN_LIMIT
+
+def _key_hash(key): return _hl.sha256(key.encode("utf-8")).hexdigest()
+
+def _room_owned_by_other(room, key):
+    """방에 소유 키가 있고 내 키가 다르면 True (소유자가 접속 중이거나 끊긴 지 ROOM_HOLD_SEC 이내)"""
+    o = room_owner.get(room)
+    if not o: return False
+    if key and _key_hash(key) == o["key"]: return False
+    return bool(bridges.get(room)) or (time.time() - o["ts"] < ROOM_HOLD_SEC)
+
+def _room_empty(room):
+    return not (rooms.get(room) or bridges.get(room) or cams.get(room) or cue_clients.get(room) or cue_ops.get(room) or cue_recv.get(room))
+
+def _cleanup_room(room):
+    """아무도 없는 방의 상태를 지운다(방 키로 무한히 쌓이던 dict 정리). 소유권(room_owner)은 유지 시간 뒤 reaper가 정리."""
+    if not room or not _room_empty(room): return
+    for d in (state, notes, timers, cue_state, cue_sheets, rooms, bridges, cams, cue_clients, cue_ops, cue_recv):
+        d.pop(room, None)
 
 def _today():
     return time.strftime("%Y-%m-%d", time.gmtime())
 
 async def verify_license(token: str, device: str) -> bool:
     """호스트가 보낸 계정 토큰으로 이 기기의 활성 등록(activations)이 있는지 Supabase에 확인 (RLS: 본인 라이선스만 보임)."""
-    if not token or not device: return False
+    if not token or not device or not _ID_RE.match(device) or len(token) > 4096: return False
     try:
         import aiohttp as _aio
-        url = (SUPABASE_URL + "/rest/v1/activations?select=id,binding_id,licenses(status,product_id,expires_at)&binding_id=eq." + device)
+        url = (SUPABASE_URL + "/rest/v1/activations?select=id,binding_id,licenses(status,product_id,expires_at)&binding_id=eq." + _q(device, safe=""))
         async with _aio.ClientSession() as sess:
             async with sess.get(url, headers={"apikey": SUPABASE_ANON, "Authorization": "Bearer " + token}, timeout=_aio.ClientTimeout(total=6)) as r:
                 if r.status != 200: return False
@@ -73,7 +116,7 @@ async def demo_close(ws, room):
     except Exception: pass
     try: await ws.close()
     except Exception: pass
-SERVER_VER = "2026-09-05.1"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-05.2"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -136,6 +179,38 @@ def cue_set(room, ch, st):
     cue_state.setdefault(room, {})[ch] = {"state": st, "ack": False, "ts": now_ms()}
     return True
 
+# ---- 큐 시트 (SM 큐 스택): 방 단위 보관, 오퍼레이터 콘솔끼리 동기화 ----
+cue_sheets: dict[str, dict] = {}   # room -> {"cues": [{"id","num","label","note","channels"}], "cur": int}
+CUE_GO_HOLD = 4                    # 시트에서 발사한 GO는 이 시간(초) 뒤 자동 소등 (실물 큐 라이트 관행)
+
+def cue_sheet_msg(room):
+    sh = cue_sheets.get(room, {"cues": [], "cur": 0})
+    return json.dumps({"type": "cue_sheet", "cues": sh["cues"], "cur": sh["cur"]})
+
+def cue_sheet_clean(cues):
+    clean = []
+    for c in (cues or [])[:500]:
+        if not isinstance(c, dict):
+            continue
+        clean.append({"id": str(c.get("id", ""))[:16],
+                      "num": str(c.get("num", ""))[:16],
+                      "label": str(c.get("label", ""))[:80],
+                      "note": str(c.get("note", ""))[:300],
+                      "channels": [str(x)[:24].strip().upper() for x in (c.get("channels") or [])[:32] if str(x).strip()]})
+    return clean
+
+async def cue_auto_off(room, chs, ts):
+    """시트 GO 발사 후 일정 시간 지나면, 그 사이 상태가 안 바뀐 채널만 자동 소등."""
+    await asyncio.sleep(CUE_GO_HOLD)
+    changed = False
+    for ch in chs:
+        cur = cue_state.get(room, {}).get(ch)
+        if cur and cur["state"] == "go" and cur["ts"] == ts:
+            cue_state[room][ch] = {"state": "off", "ack": False, "ts": now_ms()}
+            changed = True
+    if changed:
+        await cue_broadcast(room)
+
 def roster(room):
     return sorted(set(c for c in cams.get(room, {}).values() if c))
 
@@ -164,9 +239,10 @@ async def broadcast_roster(room):
             bridges[room].discard(ws)
 
 async def ws_handler(request):
-    ws = web.WebSocketResponse(heartbeat=10)
+    ws = web.WebSocketResponse(heartbeat=10, max_msg_size=64 * 1024)
     await ws.prepare(request)
     room, is_bridge, is_cueop, is_cue = None, False, False, False
+    ip = request.headers.get("X-Forwarded-For", request.remote or "?").split(",")[0].strip()[:64]
     try:
         async for msg in ws:
             if msg.type != WSMsgType.TEXT:
@@ -180,8 +256,31 @@ async def ws_handler(request):
             if t == "leave":                     # 폰이 명시적으로 나감 (번호 변경/페이지 닫기) → 즉시 현황 갱신
                 break
             if t == "join":
-                room = str(data.get("room", "")).strip().upper() or "DEFAULT"
+                if room is not None: continue                    # 한 소켓은 한 번만 join
+                if not _rate_ok(ip):
+                    print(f"[guard ] join rate limit {ip}", flush=True); await ws.close(); return ws
+                rm = str(data.get("room", ""))[:32].strip().upper() or "DEFAULT"
+                if not _ROOM_RE.match(rm):
+                    await ws.send_str(json.dumps({"type": "error", "code": "bad_room"})); await ws.close(); return ws
+                if rm not in rooms and rm not in cue_clients and len(rooms) + len(cue_clients) >= MAX_ROOMS:
+                    await ws.send_str(json.dumps({"type": "error", "code": "server_full"})); await ws.close(); return ws
                 role = data.get("role")
+                if role == "cueop" and _room_owned_by_other(rm, str(data.get("key") or "")[:128]):
+                    await ws.send_str(json.dumps({"type": "error", "code": "room_owned"})); await ws.close(); return ws
+                if role == "bridge":
+                    auth = data.get("auth") or {}
+                    if not isinstance(auth, dict): auth = {}
+                    key = str(auth.get("room_key") or "")[:128]
+                    if _room_owned_by_other(rm, key):                # 다른 호스트의 방 → 브릿지 거부 (탈리 위조 방지)
+                        print(f"[guard ] bridge refused: room {rm} owned by another host ({ip})", flush=True)
+                        await ws.send_str(json.dumps({"type": "error", "code": "room_owned"})); await ws.close(); return ws
+                    mode = "licensed" if await verify_license(str(auth.get("token", "")), str(auth.get("device", ""))) else "demo"
+                    device = str(auth.get("device") or auth.get("demo") or ("ip-" + ip))[:64]
+                    if mode == "demo" and demo_left(device, auth.get("started")) <= 0:
+                        print(f"[bridge] demo limit refused {rm} dev={device}", flush=True)
+                        await ws.send_str(json.dumps({"type": "demo_limit", "left": 0})); await ws.close(); return ws
+                    if key: room_owner[rm] = {"key": _key_hash(key), "ts": time.time()}
+                room = rm
                 is_bridge, is_cueop, is_cue = role == "bridge", role == "cueop", role == "cue"
                 if is_cueop:
                     cue_clients.setdefault(room, set()).add(ws)
@@ -189,20 +288,17 @@ async def ws_handler(request):
                     print(f"[cueop ] joined {room}", flush=True)
                     await cue_broadcast(room)                 # op_online 갱신 포함, 본인에게도 현재 상태 전달
                     await ws.send_str(cue_roster_msg(room))
+                    await ws.send_str(cue_sheet_msg(room))
+                    await ws.send_str(msg_msg(room)); await ws.send_str(timer_msg(room))
                 elif is_cue:
                     ch = str(data.get("ch", ""))[:24].strip().upper() or "CUE"
                     cue_clients.setdefault(room, set()).add(ws)
                     cue_recv.setdefault(room, {})[ws] = ch
                     print(f"[cue   ] joined {room} ch={ch}", flush=True)
                     await ws.send_str(cue_msg(room))
+                    await ws.send_str(msg_msg(room)); await ws.send_str(timer_msg(room))
                     await cue_ops_send(room, cue_roster_msg(room))
                 elif is_bridge:
-                    auth = data.get("auth") or {}
-                    mode = "licensed" if await verify_license(str(auth.get("token", "")), str(auth.get("device", ""))) else "demo"
-                    device = str(auth.get("device") or auth.get("demo") or ("ip-" + (request.remote or "?")))[:64]
-                    if mode == "demo" and demo_left(device, auth.get("started")) <= 0:
-                        print(f"[bridge] demo limit refused {room} dev={device}", flush=True)
-                        await ws.send_str(json.dumps({"type": "demo_limit", "left": 0})); await ws.close(); return ws
                     bridge_meta[ws] = {"mode": mode, "device": device, "room": room}
                     rooms.setdefault(room, set()).add(ws)
                     bridges.setdefault(room, set()).add(ws)
@@ -214,7 +310,7 @@ async def ws_handler(request):
                     await ws.send_str(msg_msg(room)); await ws.send_str(timer_msg(room))
                 else:
                     rooms.setdefault(room, set()).add(ws)
-                    cam = int(data.get("cam", 0) or 0)
+                    cam = _i(data.get("cam"), 0, 0, 99)
                     cams.setdefault(room, {})[ws] = cam
                     print(f"[phone ] joined {room} cam={cam} ({len(cams[room])} cams)", flush=True)
                     await ws.send_str(tally_msg(room))
@@ -222,36 +318,38 @@ async def ws_handler(request):
                     await ws.send_str(timer_msg(room))
                     await broadcast_roster(room)
             elif t == "tally" and is_bridge and room:
-                pgm_list = [int(x) for x in data.get("pgm", []) if x]
-                pvw_list = [int(x) for x in data.get("pvw", []) if x]
-                state[room] = {"program": int(data.get("program", 0)),
-                               "preview": int(data.get("preview", 0)),
+                pgm_list = [_i(x) for x in (data.get("pgm") or [])[:64] if _i(x) > 0]
+                pvw_list = [_i(x) for x in (data.get("pvw") or [])[:64] if _i(x) > 0]
+                state[room] = {"program": _i(data.get("program"), 0, 0),
+                               "preview": _i(data.get("preview"), 0, 0),
                                "pgm": pgm_list, "pvw": pvw_list, "online": True}
                 print(f"[{room}] PGM={pgm_list or state[room]['program']} PVW={pvw_list or state[room]['preview']}", flush=True)
                 await broadcast(room)
                 asyncio.create_task(apns_live.push_room(room, state[room], notes.get(room), timers.get(room)))
-            elif t == "msg" and is_bridge and room:
+            elif t == "msg" and (is_bridge or is_cueop) and room:
                 text = str(data.get("text", ""))[:200]
                 notes[room] = {"text": text, "ts": now_ms()}
                 print(f"[{room}] MSG: {text}", flush=True)
                 await broadcast(room, msg_msg(room))
+                await cue_broadcast(room, msg_msg(room))          # 큐 수신기·콘솔에도 공지 전달
                 asyncio.create_task(apns_live.push_room(room, state.get(room, OFFLINE), notes.get(room), timers.get(room), alert_onair=False))
-            elif t == "timer" and is_bridge and room:
+            elif t == "timer" and (is_bridge or is_cueop) and room:
                 act = data.get("action"); cur = {**EMPTY_TIMER, **timers.get(room, {})}
                 tgt = cur["target"]
                 if act == "set":      # 새 카운트다운 설정(정지 상태)
-                    cur = {"running": False, "end": 0, "remain": max(0, int(data.get("seconds", 0))) * 1000, "target": tgt}
+                    cur = {"running": False, "end": 0, "remain": _i(data.get("seconds"), 0, 0, 359999) * 1000, "target": tgt}
                 elif act == "start" and not cur["running"] and cur["remain"] > 0:
                     cur = {"running": True, "end": now_ms() + cur["remain"], "remain": cur["remain"], "target": tgt}
                 elif act == "pause" and cur["running"]:
                     cur = {"running": False, "end": 0, "remain": max(0, cur["end"] - now_ms()), "target": tgt}
                 elif act == "reset":
-                    cur = {"running": False, "end": 0, "remain": max(0, int(data.get("seconds", 0))) * 1000, "target": tgt}
+                    cur = {"running": False, "end": 0, "remain": _i(data.get("seconds"), 0, 0, 359999) * 1000, "target": tgt}
                 elif act == "target":         # 목표 시각 설정 (epoch ms, 0이면 해제)
-                    cur["target"] = max(0, int(data.get("target_ms", 0)))
+                    cur["target"] = _i(data.get("target_ms"), 0, 0)
                 timers[room] = cur
                 print(f"[{room}] TIMER {act}: {cur}", flush=True)
                 await broadcast(room, timer_msg(room))
+                await cue_broadcast(room, timer_msg(room))        # 큐 수신기·콘솔에도 타이머 전달
                 asyncio.create_task(apns_live.push_room(room, state.get(room, OFFLINE), notes.get(room), timers.get(room), alert_onair=False))
             elif t == "cue" and is_cueop and room:
                 if cue_set(room, data.get("ch", ""), data.get("state", "")):
@@ -265,6 +363,31 @@ async def ws_handler(request):
             elif t == "cue_remove" and is_cueop and room:
                 ch = str(data.get("ch", "")).strip().upper()
                 if cue_state.get(room, {}).pop(ch, None) is not None:
+                    await cue_broadcast(room)
+            elif t == "cue_sheet_set" and is_cueop and room:
+                clean = cue_sheet_clean(data.get("cues"))
+                cur = max(0, min(_i(data.get("cur")), max(0, len(clean) - 1) if clean else 0))
+                cue_sheets[room] = {"cues": clean, "cur": cur}
+                print(f"[{room}] SHEET set ({len(clean)} cues, cur={cur})", flush=True)
+                await cue_ops_send(room, cue_sheet_msg(room))
+            elif t == "cue_sheet_cur" and is_cueop and room:
+                sh = cue_sheets.setdefault(room, {"cues": [], "cur": 0})
+                sh["cur"] = max(0, min(_i(data.get("cur")), max(0, len(sh["cues"]) - 1)))
+                await cue_ops_send(room, cue_sheet_msg(room))
+            elif t == "cue_fire" and is_cueop and room:
+                sh = cue_sheets.get(room, {"cues": [], "cur": 0})
+                i, phase = _i(data.get("index"), -1), data.get("phase")
+                if 0 <= i < len(sh["cues"]) and phase in ("standby", "go"):
+                    cue = sh["cues"][i]
+                    info = {"num": cue["num"], "label": cue["label"]}
+                    ts = now_ms()
+                    for c in cue["channels"]:
+                        cue_state.setdefault(room, {})[c] = {"state": phase, "ack": False, "ts": ts, "cue": info}
+                    print(f"[{room}] FIRE cue {cue['num']} {phase} -> {cue['channels']}", flush=True)
+                    if phase == "go":
+                        sh["cur"] = min(i + 1, max(0, len(sh["cues"]) - 1))   # GO 후 다음 큐로 자동 이동
+                        await cue_ops_send(room, cue_sheet_msg(room))
+                        asyncio.create_task(cue_auto_off(room, list(cue["channels"]), ts))
                     await cue_broadcast(room)
             elif t == "cue_ack" and is_cue and room:
                 ch = cue_recv.get(room, {}).get(ws)
@@ -284,7 +407,7 @@ async def ws_handler(request):
                     apns_live.mark_sleep(tok, bool(data.get("suspend")))     # 잠들 예정 알림 / 다시 활성이면 해제
                     apns_live.cancel_end(apns_live.device_of(tok))            # 앱이 살아있음 → 예약된 종료 취소
             elif t == "rtt" and room:                # 폰이 잰 서버 왕복 지연(ms) 보고 → 호스트에 전달
-                ms = int(data.get("ms", 0) or 0)
+                ms = _i(data.get("ms"))
                 if 0 < ms < 100000 and not is_bridge:
                     ws_rtt[ws] = ms
                     await broadcast_roster(room)
@@ -319,14 +442,17 @@ async def ws_handler(request):
                 rooms.get(room, set()).discard(ws)
                 if is_bridge:
                     bridges.get(room, set()).discard(ws)
-                    state[room] = dict(OFFLINE)
+                    if room_owner.get(room): room_owner[room]["ts"] = time.time()
                     print(f"[bridge] left {room}", flush=True)
-                    await broadcast(room)
-                    asyncio.create_task(apns_live.push_room(room, state[room], notes.get(room), timers.get(room), alert_onair=False))
+                    if not bridges.get(room):                  # 같은 호스트의 다른 브릿지가 남아 있으면 오프라인으로 만들지 않는다
+                        state[room] = {**OFFLINE, "pgm": [], "pvw": []}
+                        await broadcast(room)
+                        asyncio.create_task(apns_live.push_room(room, state[room], notes.get(room), timers.get(room), alert_onair=False))
                 else:
                     cams.get(room, {}).pop(ws, None)
                     print(f"[phone ] left {room}", flush=True)
                     await broadcast_roster(room)
+            _cleanup_room(room)
     return ws
 
 async def reaper(app):
@@ -334,6 +460,17 @@ async def reaper(app):
     while True:
         await asyncio.sleep(5)
         now = time.time()
+        # 오래된 항목 정리: 데모 최초 확인(기간+1일 지난 것), 방 소유권(유지 시간 지난 빈 방), join 카운터, 빈 방 잔여 상태
+        for dev, first in list(demo_first.items()):
+            if now - first > (DEMO_DAYS + 1) * 86400: demo_first.pop(dev, None)
+        if len(demo_first) > 50000:
+            for dev in sorted(demo_first, key=demo_first.get)[:len(demo_first) - 50000]: demo_first.pop(dev, None)
+        for rm, o in list(room_owner.items()):
+            if not bridges.get(rm) and now - o["ts"] > ROOM_HOLD_SEC: room_owner.pop(rm, None)
+        for k, h in list(join_hits.items()):
+            if now - h[1] > 120: join_hits.pop(k, None)
+        for rm in list(set(state) | set(notes) | set(timers) | set(cue_state) | set(cue_sheets)):
+            _cleanup_room(rm)
         for bws, meta in list(bridge_meta.items()):
             if meta.get("mode") != "demo": continue
             if demo_left(meta["device"]) <= 0:                      # 접속 중에 데모 7일이 끝남
@@ -388,14 +525,26 @@ async def health(request):
 
 async def ios_activity(request):
     """아이폰 앱이 Live Activity 푸시 토큰을 등록/해제. POST {room, cam, token} / DELETE {token}"""
-    try: d = await request.json()
-    except Exception: return web.json_response({"ok": False, "error": "json"}, status=400)
-    token = str(d.get("token", "")).strip().lower()
-    if not token and not d.get("device"): return web.json_response({"ok": False, "error": "token"}, status=400)
-    device = str(d.get("device", "")).strip()
+    try:
+        if request.content_length and request.content_length > 8192: return web.json_response({"ok": False, "error": "size"}, status=413)
+        d = await request.json()
+        if not isinstance(d, dict): raise ValueError("shape")
+        token = str(d.get("token", "")).strip().lower()[:256]
+        device = str(d.get("device", "")).strip()[:64]
+        if token and not _TOKEN_RE.match(token): return web.json_response({"ok": False, "error": "token"}, status=400)
+        if device and not _ID_RE.match(device): return web.json_response({"ok": False, "error": "device"}, status=400)
+        return await _ios_activity(request, d, token, device)
+    except Exception as e:
+        print(f"[ios   ] bad request {e!r}", flush=True)
+        return web.json_response({"ok": False, "error": "bad_request"}, status=400)
+
+async def _ios_activity(request, d, token, device):
+    if not token and not device: return web.json_response({"ok": False, "error": "token"}, status=400)
     if request.method == "DELETE":
         apns_live.unregister(token=token, device=device); return web.json_response({"ok": True})
-    room = str(d.get("room", "")).strip().upper() or "DEFAULT"; cam = int(d.get("cam", 0) or 0)
+    room = str(d.get("room", ""))[:32].strip().upper() or "DEFAULT"; cam = _i(d.get("cam"), 0, 0, 99)
+    if not _ROOM_RE.match(room): return web.json_response({"ok": False, "error": "room"}, status=400)
+    if apns_live.count(room) >= MAX_IOS_PER_ROOM: return web.json_response({"ok": False, "error": "room_full"}, status=429)
     apns_live.cancel_end(device)                       # 재접속·재등록 = 살아있음
     apns_live.register(room, cam, token, device)
     if "alerts" in d: apns_live.set_alerts(token, bool(d.get("alerts")))

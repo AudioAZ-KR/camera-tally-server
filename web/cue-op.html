@@ -59,6 +59,48 @@
 
   .links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
   .links a { display: block; text-align: center; padding: 10px 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: #fff; text-decoration: none; font-weight: bold; font-size: 14px; }
+
+  /* ===== 큐 시트 ===== */
+  .transport { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: stretch;
+               background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+  .curcue { min-width: 0; }
+  .curcue small { display: block; font-size: 10px; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
+  .curcue b { font-size: 26px; font-family: var(--mono, ui-monospace, monospace); margin-right: 8px; }
+  #curLabel { font-size: 16px; font-weight: 700; }
+  .curnote { font-size: 13px; color: var(--muted); white-space: pre-wrap; word-break: break-all; }
+  .curch { font-size: 11px; color: var(--muted); font-weight: bold; letter-spacing: .05em; margin-top: 2px; }
+  .tbtns { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+  .tbtns button { width: 108px; padding: 14px 0; font-size: 15px; letter-spacing: .08em; }
+  .cuerow { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin: 6px 0; background: var(--bg); cursor: pointer; }
+  .cuerow.cur { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand) inset; }
+  .cuerow.done { opacity: .45; }
+  .cmain { display: flex; align-items: center; gap: 8px; }
+  .cnum { font-family: var(--mono, ui-monospace, monospace); font-weight: 700; font-size: 15px; min-width: 44px; }
+  .clabel { flex: 1; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cchips { font-size: 11px; color: var(--muted); font-weight: bold; white-space: nowrap; }
+  .cbtn { background: none; border: 1px solid var(--border); color: var(--muted); width: 30px; height: 30px; padding: 0; font-size: 13px; border-radius: 4px; flex: none; }
+  .cnote { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: pre-wrap; word-break: break-all; }
+  .cuerow.editing { cursor: default; }
+  .cuerow.editing input, .cuerow.editing textarea { width: 100%; text-align: left; font-size: 14px; padding: 8px; margin-top: 6px; background: var(--surface); }
+  .cuerow.editing .erow { display: flex; gap: 6px; }
+  .cuerow.editing .erow input.enum { width: 84px; flex: none; }
+  .chpick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chpick button { padding: 6px 12px; font-size: 12px; background: var(--border); color: var(--muted); }
+  .chpick button.on { background: var(--brand); color: var(--bg); }
+  textarea { border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-family: var(--font); }
+  #importText { width: 100%; font-size: 13px; padding: 10px; text-align: left; }
+  .sheetadd { display: flex; gap: 8px; margin-top: 10px; }
+  .sheetadd button { flex: 1; }
+
+  /* ===== 타이머·공지 ===== */
+  .tmview { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; background: var(--bg); border: 1px solid var(--border);
+            border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; font-variant-numeric: tabular-nums; }
+  #opClock { font-size: 20px; font-weight: 800; }
+  .tmstat { font-size: 13px; color: var(--muted); font-weight: bold; }
+  .tmstat.warn { color: #FFD166; } .tmstat.over { color: #FF6B6B; }
+  .tmrow { display: flex; gap: 6px; margin-top: 8px; }
+  .tmrow input { flex: 1; min-width: 0; font-size: 14px; padding: 9px; }
+  .tmrow button { flex: 1; padding: 10px 0; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -82,6 +124,62 @@
     <div class="tophead"><span class="code" id="code"></span><span id="connBadge">…</span></div>
     <small id="lblShare">수신자에게 방 코드를 알려주거나 아래 링크를 공유하세요.</small>
     <div class="links" id="links"></div>
+  </div>
+
+  <div class="card">
+    <h2 id="lblSheetTitle">큐 시트</h2>
+    <div class="transport">
+      <div class="curcue">
+        <small id="lblNext">다음 큐</small>
+        <b id="curNum">—</b><span id="curLabel"></span>
+        <div class="curnote" id="curNote"></div>
+        <div class="curch" id="curCh"></div>
+      </div>
+      <div class="tbtns">
+        <button class="bStby" id="fireStby">STANDBY</button>
+        <button class="bGo" id="fireGo">GO</button>
+      </div>
+    </div>
+    <div id="cueList"></div>
+    <div class="sheetadd">
+      <button class="sec" id="addCue">큐 추가</button>
+      <button class="sec" id="importBtn">가져오기</button>
+    </div>
+    <div id="importBox" style="display:none; margin-top:10px">
+      <textarea id="importText" rows="7"></textarea>
+      <div class="genrow" style="display:flex; gap:8px; margin-top:8px">
+        <button class="sec" id="importCancel" style="flex:1">취소</button>
+        <button id="importOk" style="flex:1">적용</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 id="lblTmTitle">타이머·공지</h2>
+    <div class="tmview">
+      <b id="opClock">--:--:--</b>
+      <span class="tmstat" id="opTargetView"></span>
+      <span class="tmstat" id="opTimerView"></span>
+    </div>
+    <div class="addrow">
+      <input id="msgIn" placeholder="공지 입력" maxlength="200" style="text-align:left">
+      <button id="msgSend">보내기</button>
+      <button class="sec" id="msgClear">지우기</button>
+    </div>
+    <small id="opCurMsg" style="display:block; margin-top:6px"></small>
+    <div class="tmrow">
+      <input id="tMin" type="number" min="0" max="999" placeholder="분" inputmode="numeric">
+      <input id="tSec" type="number" min="0" max="59" placeholder="초" inputmode="numeric">
+      <button class="sec" id="tSet">설정</button>
+      <button id="tStart">시작</button>
+      <button class="sec" id="tPause">일시정지</button>
+      <button class="sec" id="tReset">리셋</button>
+    </div>
+    <div class="tmrow">
+      <input id="tTarget" type="time">
+      <button class="sec" id="tgSet">목표 설정</button>
+      <button class="sec" id="tgUnset">해제</button>
+    </div>
   </div>
 
   <div class="card">
@@ -112,49 +210,129 @@ const I18N = {
         share:'수신자에게 방 코드를 알려주거나 아래 링크를 공유하세요.', chTitle:'채널',
         addPh:'채널 추가 (예: FLY)', add:'추가', back:'처음으로', needRoom:'방 코드를 입력하세요',
         connected:'연결됨', connecting:'연결 중…', reconnecting:'재연결 중…',
-        waitAck:'응답 대기', acked:'확인', devices:'대' },
+        waitAck:'응답 대기', acked:'확인', devices:'대',
+        sheetTitle:'큐 시트', nextCue:'다음 큐', addCue:'큐 추가', importBtn:'가져오기',
+        importPh:'한 줄에 큐 하나:\n번호 | 채널1,채널2 | 큐 이름 | 메모\n예) 1 | LX,SND | 오프닝 | 암전 후 시작',
+        apply:'적용', cancel:'취소', save:'저장',
+        noCues:'큐가 없습니다. 큐 추가 또는 가져오기로 시작하세요.',
+        numPh:'번호', labelPh:'큐 이름', notePh:'메모',
+        replaceAsk:'기존 큐 시트를 교체할까요? (취소하면 뒤에 추가됩니다)',
+        tmTitle:'타이머·공지', msgPh:'공지 입력', send:'보내기', clearMsg:'지우기',
+        tSet:'설정', tStart:'시작', tPause:'일시정지', tReset:'리셋',
+        tgSet:'목표 설정', tgUnset:'해제', minPh:'분', secPh:'초',
+        tgWord:'목표', tmWord:'타이머' },
   en: { title:'Flare Cue', sub:'Send per-channel STANDBY / GO to crew smartphones',
         roomTitle:'Room Code', gen:'Generate', start:'Start console',
         share:'Share the room code or the links below with receivers.', chTitle:'Channels',
         addPh:'Add channel (e.g. FLY)', add:'Add', back:'Back to start', needRoom:'Enter a room code',
         connected:'Connected', connecting:'Connecting…', reconnecting:'Reconnecting…',
-        waitAck:'awaiting ack', acked:'ACK', devices:'' },
+        waitAck:'awaiting ack', acked:'ACK', devices:'',
+        sheetTitle:'Cue Sheet', nextCue:'Next cue', addCue:'Add cue', importBtn:'Import',
+        importPh:'One cue per line:\nnumber | ch1,ch2 | title | note\ne.g. 1 | LX,SND | Opening | after blackout',
+        apply:'Apply', cancel:'Cancel', save:'Save',
+        noCues:'No cues yet. Use Add cue or Import.',
+        numPh:'No.', labelPh:'Cue title', notePh:'Note',
+        replaceAsk:'Replace the current cue sheet? (Cancel = append)',
+        tmTitle:'Timer & Notice', msgPh:'Type a notice', send:'Send', clearMsg:'Clear',
+        tSet:'Set', tStart:'Start', tPause:'Pause', tReset:'Reset',
+        tgSet:'Set target', tgUnset:'Unset', minPh:'min', secPh:'sec',
+        tgWord:'Target', tmWord:'Timer' },
   ja: { title:'Flare Cue', sub:'チャンネルごとの STANDBY / GO をスタッフのスマホに表示',
         roomTitle:'ルームコード', gen:'コード生成', start:'コンソール開始',
         share:'受信者にルームコードか下のリンクを共有してください。', chTitle:'チャンネル',
         addPh:'チャンネル追加（例: FLY）', add:'追加', back:'最初に戻る', needRoom:'ルームコードを入力してください',
         connected:'接続済み', connecting:'接続中…', reconnecting:'再接続中…',
-        waitAck:'応答待ち', acked:'確認', devices:'台' },
+        waitAck:'応答待ち', acked:'確認', devices:'台',
+        sheetTitle:'キューシート', nextCue:'次のキュー', addCue:'キュー追加', importBtn:'インポート',
+        importPh:'1行に1キュー:\n番号 | ch1,ch2 | タイトル | メモ\n例) 1 | LX,SND | オープニング | 暗転後',
+        apply:'適用', cancel:'キャンセル', save:'保存',
+        noCues:'キューがありません。追加かインポートで始めてください。',
+        numPh:'番号', labelPh:'キュー名', notePh:'メモ',
+        replaceAsk:'既存のキューシートを置き換えますか？（キャンセル＝末尾に追加）',
+        tmTitle:'タイマー・お知らせ', msgPh:'お知らせを入力', send:'送信', clearMsg:'クリア',
+        tSet:'設定', tStart:'開始', tPause:'一時停止', tReset:'リセット',
+        tgSet:'目標設定', tgUnset:'解除', minPh:'分', secPh:'秒',
+        tgWord:'目標', tmWord:'タイマー' },
   zh: { title:'Flare Cue', sub:'向工作人员手机发送各通道的 STANDBY / GO',
         roomTitle:'房间代码', gen:'生成代码', start:'启动控制台',
         share:'把房间代码或下方链接分享给接收者。', chTitle:'通道',
         addPh:'添加通道（例: FLY）', add:'添加', back:'返回首页', needRoom:'请输入房间代码',
         connected:'已连接', connecting:'连接中…', reconnecting:'重新连接中…',
-        waitAck:'等待确认', acked:'已确认', devices:'台' },
+        waitAck:'等待确认', acked:'已确认', devices:'台',
+        sheetTitle:'提示单', nextCue:'下一个 Cue', addCue:'添加 Cue', importBtn:'导入',
+        importPh:'每行一个 Cue:\n编号 | 通道1,通道2 | 名称 | 备注\n例) 1 | LX,SND | 开场 | 暗场后',
+        apply:'应用', cancel:'取消', save:'保存',
+        noCues:'还没有 Cue。请添加或导入。',
+        numPh:'编号', labelPh:'Cue 名称', notePh:'备注',
+        replaceAsk:'替换现有提示单？（取消＝追加到末尾）',
+        tmTitle:'计时器·通知', msgPh:'输入通知', send:'发送', clearMsg:'清除',
+        tSet:'设置', tStart:'开始', tPause:'暂停', tReset:'重置',
+        tgSet:'设定目标', tgUnset:'取消', minPh:'分', secPh:'秒',
+        tgWord:'目标', tmWord:'计时器' },
   es: { title:'Flare Cue', sub:'Envía STANDBY / GO por canal a los móviles del equipo',
         roomTitle:'Código de Sala', gen:'Generar', start:'Iniciar consola',
         share:'Comparte el código de sala o los enlaces de abajo.', chTitle:'Canales',
         addPh:'Añadir canal (ej. FLY)', add:'Añadir', back:'Volver al inicio', needRoom:'Introduce un código de sala',
         connected:'Conectado', connecting:'Conectando…', reconnecting:'Reconectando…',
-        waitAck:'esperando conf.', acked:'CONF', devices:'' },
+        waitAck:'esperando conf.', acked:'CONF', devices:'',
+        sheetTitle:'Hoja de cues', nextCue:'Próximo cue', addCue:'Añadir cue', importBtn:'Importar',
+        importPh:'Un cue por línea:\nnúmero | ch1,ch2 | título | nota\nej. 1 | LX,SND | Apertura | tras oscuro',
+        apply:'Aplicar', cancel:'Cancelar', save:'Guardar',
+        noCues:'Sin cues. Usa Añadir cue o Importar.',
+        numPh:'N.º', labelPh:'Título del cue', notePh:'Nota',
+        replaceAsk:'¿Reemplazar la hoja de cues actual? (Cancelar = añadir al final)',
+        tmTitle:'Temporizador y avisos', msgPh:'Escribe un aviso', send:'Enviar', clearMsg:'Borrar',
+        tSet:'Fijar', tStart:'Iniciar', tPause:'Pausa', tReset:'Reiniciar',
+        tgSet:'Fijar objetivo', tgUnset:'Quitar', minPh:'min', secPh:'seg',
+        tgWord:'Objetivo', tmWord:'Temporizador' },
   fr: { title:'Flare Cue', sub:'Envoie STANDBY / GO par canal aux smartphones de l’équipe',
         roomTitle:'Code de salle', gen:'Générer', start:'Démarrer la console',
         share:'Partagez le code de salle ou les liens ci-dessous.', chTitle:'Canaux',
         addPh:'Ajouter un canal (ex. FLY)', add:'Ajouter', back:'Retour au début', needRoom:'Saisissez un code de salle',
         connected:'Connecté', connecting:'Connexion…', reconnecting:'Reconnexion…',
-        waitAck:'attente conf.', acked:'CONF', devices:'' },
+        waitAck:'attente conf.', acked:'CONF', devices:'',
+        sheetTitle:'Conduite', nextCue:'Prochain cue', addCue:'Ajouter un cue', importBtn:'Importer',
+        importPh:'Un cue par ligne :\nnuméro | ch1,ch2 | titre | note\nex. 1 | LX,SND | Ouverture | après le noir',
+        apply:'Appliquer', cancel:'Annuler', save:'Enregistrer',
+        noCues:'Aucun cue. Ajoutez ou importez.',
+        numPh:'N°', labelPh:'Titre du cue', notePh:'Note',
+        replaceAsk:'Remplacer la conduite actuelle ? (Annuler = ajouter à la fin)',
+        tmTitle:'Minuteur et annonces', msgPh:'Saisir une annonce', send:'Envoyer', clearMsg:'Effacer',
+        tSet:'Régler', tStart:'Démarrer', tPause:'Pause', tReset:'Réinitialiser',
+        tgSet:'Fixer la cible', tgUnset:'Retirer', minPh:'min', secPh:'sec',
+        tgWord:'Cible', tmWord:'Minuteur' },
   de: { title:'Flare Cue', sub:'Sendet STANDBY / GO pro Kanal an Crew-Smartphones',
         roomTitle:'Raumcode', gen:'Generieren', start:'Konsole starten',
         share:'Teile den Raumcode oder die Links unten mit den Empfängern.', chTitle:'Kanäle',
         addPh:'Kanal hinzufügen (z. B. FLY)', add:'Hinzufügen', back:'Zurück zum Start', needRoom:'Gib einen Raumcode ein',
         connected:'Verbunden', connecting:'Verbinden…', reconnecting:'Neu verbinden…',
-        waitAck:'warte auf ACK', acked:'ACK', devices:'' },
+        waitAck:'warte auf ACK', acked:'ACK', devices:'',
+        sheetTitle:'Cue-Liste', nextCue:'Nächster Cue', addCue:'Cue hinzufügen', importBtn:'Importieren',
+        importPh:'Ein Cue pro Zeile:\nNummer | Ch1,Ch2 | Titel | Notiz\nz. B. 1 | LX,SND | Eröffnung | nach Blackout',
+        apply:'Übernehmen', cancel:'Abbrechen', save:'Speichern',
+        noCues:'Noch keine Cues. Hinzufügen oder importieren.',
+        numPh:'Nr.', labelPh:'Cue-Titel', notePh:'Notiz',
+        replaceAsk:'Aktuelle Cue-Liste ersetzen? (Abbrechen = anhängen)',
+        tmTitle:'Timer & Hinweise', msgPh:'Hinweis eingeben', send:'Senden', clearMsg:'Löschen',
+        tSet:'Setzen', tStart:'Start', tPause:'Pause', tReset:'Zurücksetzen',
+        tgSet:'Ziel setzen', tgUnset:'Entfernen', minPh:'Min', secPh:'Sek',
+        tgWord:'Ziel', tmWord:'Timer' },
   it: { title:'Flare Cue', sub:'Invia STANDBY / GO per canale agli smartphone della crew',
         roomTitle:'Codice sala', gen:'Genera', start:'Avvia console',
         share:'Condividi il codice sala o i link qui sotto.', chTitle:'Canali',
         addPh:'Aggiungi canale (es. FLY)', add:'Aggiungi', back:'Torna all’inizio', needRoom:'Inserisci un codice sala',
         connected:'Connesso', connecting:'Connessione…', reconnecting:'Riconnessione…',
-        waitAck:'attesa conferma', acked:'CONF', devices:'' }
+        waitAck:'attesa conferma', acked:'CONF', devices:'',
+        sheetTitle:'Lista cue', nextCue:'Prossimo cue', addCue:'Aggiungi cue', importBtn:'Importa',
+        importPh:'Un cue per riga:\nnumero | ch1,ch2 | titolo | nota\nes. 1 | LX,SND | Apertura | dopo il buio',
+        apply:'Applica', cancel:'Annulla', save:'Salva',
+        noCues:'Nessun cue. Aggiungi o importa.',
+        numPh:'N.', labelPh:'Titolo cue', notePh:'Nota',
+        replaceAsk:'Sostituire la lista cue attuale? (Annulla = aggiungi in coda)',
+        tmTitle:'Timer e avvisi', msgPh:'Scrivi un avviso', send:'Invia', clearMsg:'Cancella',
+        tSet:'Imposta', tStart:'Avvia', tPause:'Pausa', tReset:'Reimposta',
+        tgSet:'Imposta obiettivo', tgUnset:'Rimuovi', minPh:'min', secPh:'sec',
+        tgWord:'Obiettivo', tmWord:'Timer' }
 };
 function detectLang() {
   if (I18N[localStorage.lang]) return localStorage.lang;
@@ -177,7 +355,26 @@ function applyLang() {
   $('newCh').placeholder = t('addPh');
   $('addCh').textContent = t('add');
   $('back').textContent = t('back');
-  renderLangSel(); renderConnBadge(); renderChannels();
+  $('lblTmTitle').textContent = t('tmTitle');
+  $('msgIn').placeholder = t('msgPh');
+  $('msgSend').textContent = t('send');
+  $('msgClear').textContent = t('clearMsg');
+  $('tMin').placeholder = t('minPh');
+  $('tSec').placeholder = t('secPh');
+  $('tSet').textContent = t('tSet');
+  $('tStart').textContent = t('tStart');
+  $('tPause').textContent = t('tPause');
+  $('tReset').textContent = t('tReset');
+  $('tgSet').textContent = t('tgSet');
+  $('tgUnset').textContent = t('tgUnset');
+  $('lblSheetTitle').textContent = t('sheetTitle');
+  $('lblNext').textContent = t('nextCue');
+  $('addCue').textContent = t('addCue');
+  $('importBtn').textContent = t('importBtn');
+  $('importText').placeholder = t('importPh');
+  $('importOk').textContent = t('apply');
+  $('importCancel').textContent = t('cancel');
+  renderLangSel(); renderConnBadge(); renderChannels(); renderSheet();
 }
 function setLang(l) { lang = l; localStorage.lang = l; applyLang(); }
 function renderLangSel() {
@@ -201,6 +398,7 @@ function renderConnBadge() {
   const b = $('connBadge');
   b.textContent = connected ? t('connected') : t('connecting');
   b.className = connected ? 'on' : '';
+  renderSheet();
 }
 function renderLinks() {
   $('links').innerHTML = channels.map(c =>
@@ -214,8 +412,8 @@ function renderChannels() {
     const pill = s.state === 'standby' ? `<span class="pill stby">STBY ${s.ack ? t('acked') : '· ' + t('waitAck')}</span>`
                : s.state === 'go' ? '<span class="pill go">GO</span>'
                : '<span class="pill">OFF</span>';
-    return `<div class="chrow" data-ch="${c}">
-      <div class="meta"><span class="name">${c}</span><span class="cnt${n ? ' on' : ''}">${n}${t('devices') || '×'}</span></div>
+    return `<div class="chrow" data-ch="${esc(c)}">
+      <div class="meta"><span class="name">${esc(c)}</span><span class="cnt${n ? ' on' : ''}">${n}${t('devices') || '×'}</span></div>
       ${pill}
       <div class="btns">
         <button class="bStby${s.state === 'standby' ? ' act' : ''}" data-st="standby">STBY</button>
@@ -250,6 +448,162 @@ $('addCh').onclick = () => {
 $('newCh').addEventListener('keydown', e => { if (e.key === 'Enter') $('addCh').click(); });
 
 function send(obj) { try { ws?.readyState === 1 && ws.send(JSON.stringify(obj)); } catch {} }
+
+// ===== 큐 시트 (SM 큐 스택) =====
+let sheet = { cues: [], cur: 0 };
+let editIdx = null;              // 편집 중인 큐 index — 편집 중엔 서버 갱신으로 폼을 덮지 않음
+let sheetRestored = false;       // 서버가 비어 있을 때 로컬 백업을 1회만 복원
+const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+function saveSheetLocal() { try { localStorage['cueSheet:' + room] = JSON.stringify(sheet); } catch {} }
+function sendSheet() {
+  let added = false;
+  for (const q of sheet.cues) for (const c of q.channels) if (!channels.includes(c)) { channels.push(c); added = true; }
+  if (added) { saveChannels(); renderChannels(); }
+  send({ type: 'cue_sheet_set', cues: sheet.cues.map(({ _new, ...q }) => q), cur: sheet.cur });
+  saveSheetLocal(); renderSheet();
+}
+function renderSheet() {
+  if (!room || !$('cueList')) return;
+  const cues = sheet.cues, cur = sheet.cur, c = cues[cur];
+  $('curNum').textContent = c ? (c.num || '—') : '—';
+  $('curLabel').textContent = c ? c.label : '';
+  $('curNote').textContent = c ? c.note : '';
+  $('curCh').textContent = c ? c.channels.join(' · ') : '';
+  $('fireStby').disabled = $('fireGo').disabled = !c || !c.channels.length || !connected;
+  $('cueList').innerHTML = cues.length ? cues.map((q, i) => {
+    if (i === editIdx) return editForm(q, i);
+    return `<div class="cuerow${i === cur ? ' cur' : ''}${i < cur ? ' done' : ''}" data-i="${i}">
+      <div class="cmain">
+        <span class="cnum">${esc(q.num)}</span>
+        <span class="clabel">${esc(q.label)}</span>
+        <span class="cchips">${esc(q.channels.join(','))}</span>
+        <button class="cbtn" data-act="edit">✎</button>
+        <button class="cbtn" data-act="ins">＋</button>
+        <button class="cbtn" data-act="del">×</button>
+      </div>
+      ${q.note ? `<div class="cnote">${esc(q.note)}</div>` : ''}
+    </div>`;
+  }).join('') : `<small>${esc(t('noCues'))}</small>`;
+}
+function editForm(q, i) {
+  const chs = [...new Set([...channels, ...q.channels])];
+  return `<div class="cuerow editing" data-i="${i}">
+    <div class="erow">
+      <input class="enum" id="eNum" value="${esc(q.num)}" placeholder="${esc(t('numPh'))}">
+      <input id="eLabel" value="${esc(q.label)}" placeholder="${esc(t('labelPh'))}">
+    </div>
+    <div class="chpick" id="ePick">${chs.map(c => `<button data-ch="${esc(c)}" class="${q.channels.includes(c) ? 'on' : ''}">${esc(c)}</button>`).join('')}</div>
+    <textarea id="eNote" rows="2" placeholder="${esc(t('notePh'))}">${esc(q.note)}</textarea>
+    <div class="erow" style="margin-top:6px">
+      <button class="sec" data-act="cancel" style="flex:1">${esc(t('cancel'))}</button>
+      <button data-act="save" style="flex:1">${esc(t('save'))}</button>
+    </div>
+  </div>`;
+}
+// 번호 규칙: 추가 = 마지막 정수+1, 삽입 = 앞 큐 번호에 .1 .2 … (콘솔 씬 번호 방식)
+function nextMainNum() {
+  let mx = 0;
+  for (const q of sheet.cues) { const n = parseInt(q.num); if (!isNaN(n)) mx = Math.max(mx, n); }
+  return String(mx + 1);
+}
+function pointNumAfter(i) {
+  const base = sheet.cues[i]?.num || nextMainNum();
+  const used = new Set(sheet.cues.map(q => q.num));
+  for (let k = 1; k < 100; k++) { const cand = `${base}.${k}`; if (!used.has(cand)) return cand; }
+  return base + '.x';
+}
+$('cueList').addEventListener('click', e => {
+  const row = e.target.closest('.cuerow'); if (!row) return;
+  const i = parseInt(row.dataset.i), act = e.target.dataset.act;
+  if (row.classList.contains('editing')) {
+    if (e.target.dataset.ch !== undefined) { e.target.classList.toggle('on'); return; }
+    if (act === 'cancel') { if (sheet.cues[i] && sheet.cues[i]._new) sheet.cues.splice(i, 1); editIdx = null; renderSheet(); return; }
+    if (act === 'save') {
+      const q = sheet.cues[i]; delete q._new;
+      q.num = document.getElementById('eNum').value.trim().slice(0, 16) || q.num;
+      q.label = document.getElementById('eLabel').value.trim().slice(0, 80);
+      q.note = document.getElementById('eNote').value.trim().slice(0, 300);
+      q.channels = [...document.querySelectorAll('#ePick button.on')].map(b => b.dataset.ch);
+      editIdx = null; sendSheet();
+    }
+    return;
+  }
+  if (act === 'edit') { editIdx = i; renderSheet(); return; }
+  if (act === 'ins') {
+    sheet.cues.splice(i + 1, 0, { id: uid(), num: pointNumAfter(i), label: '', note: '', channels: [], _new: true });
+    editIdx = i + 1; renderSheet(); return;
+  }
+  if (act === 'del') { sheet.cues.splice(i, 1); if (sheet.cur >= sheet.cues.length) sheet.cur = Math.max(0, sheet.cues.length - 1); if (editIdx !== null && editIdx > i) editIdx--; sendSheet(); return; }
+  sheet.cur = i; send({ type: 'cue_sheet_cur', cur: i }); renderSheet();
+});
+$('addCue').onclick = () => {
+  sheet.cues.push({ id: uid(), num: nextMainNum(), label: '', note: '', channels: [], _new: true });
+  editIdx = sheet.cues.length - 1; renderSheet();
+};
+$('fireStby').onclick = () => send({ type: 'cue_fire', index: sheet.cur, phase: 'standby' });
+$('fireGo').onclick = () => send({ type: 'cue_fire', index: sheet.cur, phase: 'go' });
+
+// ===== 타이머·공지 (탈리 호스트와 같은 방 단위 데이터 — 서버 msg/timer 기능 재사용) =====
+let opTimer = { running: false, end: 0, remain: 0, target: 0 }, opClockOffset = 0;
+const pad = n => String(n).padStart(2, '0');
+function fmtT(ms, showH) {
+  const over = ms < 0; ms = Math.abs(ms); const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = s % 60;
+  return (over ? '+' : '') + (h || showH ? `${h}:${pad(m)}:${pad(ss)}` : `${pad(m)}:${pad(ss)}`);
+}
+function opTick() {
+  const now = new Date();
+  $('opClock').textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const srvNow = Date.now() + opClockOffset;
+  const tg = $('opTargetView');
+  if (opTimer.target) {
+    const left = opTimer.target - srvNow, td = new Date(opTimer.target);
+    tg.textContent = `${t('tgWord')} ${pad(td.getHours())}:${pad(td.getMinutes())} · ${fmtT(left, true)}`;
+    tg.className = 'tmstat' + (left < 0 ? ' over' : left < 60000 ? ' warn' : '');
+  } else tg.textContent = '';
+  const tm = $('opTimerView');
+  if (opTimer.running || opTimer.remain) {
+    const left = opTimer.running ? opTimer.end - srvNow : opTimer.remain;
+    tm.textContent = `${t('tmWord')} ${fmtT(left)}`;
+    tm.className = 'tmstat' + (opTimer.running && left <= 0 ? ' over' : (opTimer.running && left < 10000 ? ' warn' : ''));
+  } else tm.textContent = '';
+}
+setInterval(opTick, 250);
+$('msgSend').onclick = () => { const x = $('msgIn').value.trim(); if (x) send({ type: 'msg', text: x }); };
+$('msgIn').addEventListener('keydown', e => { if (e.key === 'Enter') $('msgSend').click(); });
+$('msgClear').onclick = () => { $('msgIn').value = ''; send({ type: 'msg', text: '' }); };
+function timerSecs() { return Math.max(0, (parseInt($('tMin').value) || 0) * 60 + (parseInt($('tSec').value) || 0)); }
+$('tSet').onclick = () => send({ type: 'timer', action: 'set', seconds: timerSecs() });
+$('tStart').onclick = () => send({ type: 'timer', action: 'start' });
+$('tPause').onclick = () => send({ type: 'timer', action: 'pause' });
+$('tReset').onclick = () => send({ type: 'timer', action: 'reset', seconds: timerSecs() });
+$('tgSet').onclick = () => {
+  const v = $('tTarget').value; if (!v) return;
+  const [h, m] = v.split(':').map(Number);
+  const d = new Date(); d.setHours(h, m, 0, 0);
+  if (d.getTime() < Date.now()) d.setDate(d.getDate() + 1);   // 지난 시각이면 내일로
+  send({ type: 'timer', action: 'target', target_ms: d.getTime() });
+};
+$('tgUnset').onclick = () => send({ type: 'timer', action: 'target', target_ms: 0 });
+$('importBtn').onclick = () => { $('importBox').style.display = 'block'; $('importText').focus(); };
+$('importCancel').onclick = () => { $('importBox').style.display = 'none'; };
+$('importOk').onclick = () => {
+  const lines = $('importText').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.length) { $('importBox').style.display = 'none'; return; }
+  const cues = lines.map((ln, i) => {
+    const p = ln.split(/\s*(?:\||\t)\s*/);
+    if (p.length === 1) return { id: uid(), num: String(i + 1), label: p[0].slice(0, 80), note: '', channels: [] };
+    return { id: uid(), num: (p[0] || String(i + 1)).slice(0, 16),
+             channels: (p[1] || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
+             label: (p[2] || '').slice(0, 80), note: (p[3] || '').slice(0, 300) };
+  });
+  if (sheet.cues.length && confirm(t('replaceAsk'))) { sheet.cues = cues; sheet.cur = 0; }
+  else sheet.cues = sheet.cues.concat(cues);
+  editIdx = null; $('importBox').style.display = 'none'; $('importText').value = '';
+  sendSheet();
+};
 
 $('gen').onclick = () => {
   $('room').value = Array.from({length: 6}, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*32)]).join('');
@@ -288,6 +642,21 @@ function connect() {
       counts = d.channels || {};
       for (const c of Object.keys(counts)) if (!channels.includes(c)) channels.push(c);
       saveChannels(); renderChannels();
+    } else if (d.type === 'cue_sheet') {
+      if (editIdx !== null) return;               // 편집 중 폼 보호 (저장 시 내 시트를 서버로 보냄)
+      const remote = { cues: d.cues || [], cur: d.cur || 0 };
+      if (!remote.cues.length && !sheetRestored) { // 서버(재시작 등)가 비어 있으면 로컬 백업 복원
+        sheetRestored = true;
+        try {
+          const b = JSON.parse(localStorage['cueSheet:' + room] || 'null');
+          if (b && b.cues && b.cues.length) { sheet = { cues: b.cues, cur: b.cur || 0 }; sendSheet(); return; }
+        } catch {}
+      }
+      sheet = remote; saveSheetLocal(); renderSheet();
+    } else if (d.type === 'msg') {
+      $('opCurMsg').textContent = d.text || '';
+    } else if (d.type === 'timer') {
+      opTimer = d; if (d.now) opClockOffset = d.now - Date.now(); opTick();
     }
   };
   ws.onclose = () => {
