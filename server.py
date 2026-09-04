@@ -25,11 +25,12 @@ ws_rtt: dict = {}              # ws -> 서버 왕복 지연 ms (폰이 보고)
 token_ws: dict = {}            # token -> 이 토큰을 마지막으로 보고한 소켓 (재접속하면 새 소켓이 소유권을 가짐)
 # ---- 호스트(브릿지) 라이선스/데모 ----
 # 라이선스 있는 호스트: join.auth = {"token": Supabase access_token, "device": 기기ID} → 서버가 계정 권한으로 activations 확인
-# 데모 호스트:         join.auth = {"demo": 기기ID} → 기기별 하루 DEMO_LIMIT_SEC(기본 1시간)만 온라인 허용, 초과 시 끊고 그날은 거부
+# 데모 호스트:         join.auth = {"demo": 기기ID, "started": 데모 시작 epoch} → 기기별 DEMO_DAYS(7일) 동안 온라인 무제한, 지나면 끊고 거부
+#                     (2026-09-05 사장님 "온라인 서버도 7일 무료체험으로 동일하게" — 하루 1시간 제한 폐지)
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://lkbbenyvchddsjsihofv.supabase.co")
 SUPABASE_ANON = os.environ.get("SUPABASE_ANON", "sb_publishable_sMTkTGD-1CktZQqirrjk6Q_0mxgpRG_")   # 공개(publishable) 키
-DEMO_LIMIT_SEC = int(os.environ.get("DEMO_LIMIT_SEC", "3600"))
-demo_used: dict = {}           # (device, YYYY-MM-DD UTC) -> 오늘 사용한 초 (메모리; 재배포 시 초기화)
+DEMO_DAYS = float(os.environ.get("DEMO_DAYS", "7"))
+demo_first: dict = {}          # device -> 데모 최초 확인 epoch (메모리; 재배포 시 초기화 — 앱이 보내는 started가 1차 근거)
 bridge_meta: dict = {}         # bridge ws -> {"mode": "licensed"|"demo", "device": ...}
 
 def _today():
@@ -58,15 +59,21 @@ async def verify_license(token: str, device: str) -> bool:
     except Exception as e:
         print(f"[lic   ] verify error {e!r}", flush=True); return False
 
-def demo_left(device: str) -> int:
-    return max(0, DEMO_LIMIT_SEC - int(demo_used.get((device, _today()), 0)))
+def demo_left(device: str, started=None) -> int:
+    """데모 7일 중 남은 초. 앱이 보낸 시작 시각과 서버가 처음 본 시각 중 이른 쪽 기준."""
+    now = time.time(); first = demo_first.get(device, now)
+    try:
+        if started: first = min(first, float(started))
+    except (TypeError, ValueError): pass
+    demo_first[device] = first
+    return max(0, int(DEMO_DAYS * 86400 - (now - first)))
 
 async def demo_close(ws, room):
     try: await ws.send_str(json.dumps({"type": "demo_limit", "left": 0}))
     except Exception: pass
     try: await ws.close()
     except Exception: pass
-SERVER_VER = "2026-09-04.6"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-05.1"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -193,7 +200,7 @@ async def ws_handler(request):
                     auth = data.get("auth") or {}
                     mode = "licensed" if await verify_license(str(auth.get("token", "")), str(auth.get("device", ""))) else "demo"
                     device = str(auth.get("device") or auth.get("demo") or ("ip-" + (request.remote or "?")))[:64]
-                    if mode == "demo" and demo_left(device) <= 0:
+                    if mode == "demo" and demo_left(device, auth.get("started")) <= 0:
                         print(f"[bridge] demo limit refused {room} dev={device}", flush=True)
                         await ws.send_str(json.dumps({"type": "demo_limit", "left": 0})); await ws.close(); return ws
                     bridge_meta[ws] = {"mode": mode, "device": device, "room": room}
@@ -323,19 +330,15 @@ async def ws_handler(request):
     return ws
 
 async def reaper(app):
-    """응답 없는 폰을 주기적으로 정리해 접속 현황을 최신으로 유지 + 데모 호스트 온라인 시간 차감"""
+    """응답 없는 폰을 주기적으로 정리해 접속 현황을 최신으로 유지 + 데모 7일 지난 호스트 정리"""
     while True:
         await asyncio.sleep(5)
         now = time.time()
         for bws, meta in list(bridge_meta.items()):
             if meta.get("mode") != "demo": continue
-            k = (meta["device"], _today()); demo_used[k] = demo_used.get(k, 0) + 5
-            if demo_used[k] >= DEMO_LIMIT_SEC:
-                print(f"[bridge] demo limit reached {meta['room']} dev={meta['device']} → close", flush=True)
+            if demo_left(meta["device"]) <= 0:                      # 접속 중에 데모 7일이 끝남
+                print(f"[bridge] demo period over {meta['room']} dev={meta['device']} → close", flush=True)
                 bridge_meta.pop(bws, None); await demo_close(bws, meta["room"])
-            elif demo_used[k] % 60 == 0:
-                try: await bws.send_str(json.dumps({"type": "demo_left", "left": DEMO_LIMIT_SEC - demo_used[k]}))
-                except Exception: pass
         for room, d in list(cams.items()):
             stale = [w for w in list(d) if now - seen.get(w, 0) > STALE_SEC]
             for w in stale:
