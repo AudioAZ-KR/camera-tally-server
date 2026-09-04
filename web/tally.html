@@ -94,13 +94,15 @@
     .foot { font-size: 10px; }
     .foot button { padding: 2px 8px; font-size: 10px; }
   }
+  .brandrow { display:flex; align-items:center; gap:14px; justify-content:center; margin-bottom: 6px; }
+  .brandrow img { width:56px; height:56px; border-radius:13px; margin:0; }
+  .brandrow h1 { margin:0; }
 </style>
 </head>
 <body>
 <div id="setup">
   <select class="langsel" aria-label="Language"></select>
-  <img src="/app-icon.png" alt="" onerror="this.remove()">
-  <h1 id="lblTitle">Flare Tally</h1>
+  <div class="brandrow"><img src="/app-icon.png" alt="" onerror="this.remove()"><h1 id="lblTitle">Flare Tally</h1></div>
   <label><span id="lblRoom">방 코드</span><input id="room" placeholder="STUDIO" autocapitalize="characters"></label>
   <label><span id="lblCam">내 카메라 번호</span><input id="cam" type="number" inputmode="numeric" placeholder="1" min="1" max="20"></label>
   <button id="go">접속</button>
