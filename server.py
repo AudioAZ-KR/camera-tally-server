@@ -116,7 +116,7 @@ async def demo_close(ws, room):
     except Exception: pass
     try: await ws.close()
     except Exception: pass
-SERVER_VER = "2026-09-05.2"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-05.3"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -523,6 +523,13 @@ async def index(request):
 async def health(request):
     return web.json_response({"ok": True, "rooms": len(rooms), "ver": SERVER_VER})
 
+async def room_status(request):
+    """GET /room?code=XXXX → 그 방에 호스트(브릿지)가 켜져 있는지. 폰 앱은 켜진 방에만 들어간다 (사장님 2026-09-05)."""
+    code = str(request.query.get("code", ""))[:32].strip().upper()
+    if not code or not _ROOM_RE.match(code): return web.json_response({"ok": False, "active": False, "error": "room"}, status=400)
+    active = bool(bridges.get(code)) or code == "DEMO"
+    return web.json_response({"ok": True, "active": active, "cams": len(cams.get(code, {}))})
+
 async def ios_activity(request):
     """아이폰 앱이 Live Activity 푸시 토큰을 등록/해제. POST {room, cam, token} / DELETE {token}"""
     try:
@@ -564,6 +571,7 @@ def make_app():
     a.router.add_get("/", index)
     a.router.add_get("/ws", ws_handler)
     a.router.add_get("/health", health)
+    a.router.add_get("/room", room_status)
     a.router.add_post("/ios/activity", ios_activity)
     a.router.add_delete("/ios/activity", ios_activity)
     a.router.add_static("/", WEB_DIR, show_index=False)
