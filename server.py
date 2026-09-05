@@ -31,6 +31,8 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://lkbbenyvchddsjsihofv.supa
 SUPABASE_ANON = os.environ.get("SUPABASE_ANON", "sb_publishable_sMTkTGD-1CktZQqirrjk6Q_0mxgpRG_")   # 공개(publishable) 키
 DEMO_DAYS = float(os.environ.get("DEMO_DAYS", "7"))
 demo_first: dict = {}          # device -> 데모 최초 확인 epoch (메모리; 재배포 시 초기화 — 앱이 보내는 started가 1차 근거)
+demo_last_seen: dict = {}      # device -> 데모 브릿지가 마지막으로 접속해 있던 epoch (실행 중 만료 유예용)
+DEMO_GRACE_SEC = 12 * 3600     # 데모가 실행 중에 만료돼도 그 세션(재접속 포함)은 이 시간 안이면 허용 — 사장님 2026-09-05 "실행 중 만료돼도 끄지 말자"
 bridge_meta: dict = {}         # bridge ws -> {"mode": "licensed"|"demo", "device": ...}
 # ---- 보안 보강 (2026-09-05 점검) ----
 import re as _re, hashlib as _hl
@@ -116,7 +118,7 @@ async def demo_close(ws, room):
     except Exception: pass
     try: await ws.close()
     except Exception: pass
-SERVER_VER = "2026-09-05.5"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-05.6"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -276,7 +278,7 @@ async def ws_handler(request):
                         await ws.send_str(json.dumps({"type": "error", "code": "room_owned"})); await ws.close(); return ws
                     mode = "licensed" if await verify_license(str(auth.get("token", "")), str(auth.get("device", ""))) else "demo"
                     device = str(auth.get("device") or auth.get("demo") or ("ip-" + ip))[:64]
-                    if mode == "demo" and demo_left(device, auth.get("started")) <= 0:
+                    if mode == "demo" and demo_left(device, auth.get("started")) <= 0 and time.time() - demo_last_seen.get(device, 0) > DEMO_GRACE_SEC:
                         print(f"[bridge] demo limit refused {rm} dev={device}", flush=True)
                         await ws.send_str(json.dumps({"type": "demo_limit", "left": 0})); await ws.close(); return ws
                     if key: room_owner[rm] = {"key": _key_hash(key), "ts": time.time()}
@@ -474,9 +476,9 @@ async def reaper(app):
             _cleanup_room(rm)
         for bws, meta in list(bridge_meta.items()):
             if meta.get("mode") != "demo": continue
-            if demo_left(meta["device"]) <= 0:                      # 접속 중에 데모 7일이 끝남
-                print(f"[bridge] demo period over {meta['room']} dev={meta['device']} → close", flush=True)
-                bridge_meta.pop(bws, None); await demo_close(bws, meta["room"])
+            demo_last_seen[meta["device"]] = now                    # 접속 중 만료돼도 끊지 않는다(세션 유지); 다음 새 세션부터 거부
+        for dev, t in list(demo_last_seen.items()):
+            if now - t > DEMO_GRACE_SEC + 3600: demo_last_seen.pop(dev, None)
         for room, d in list(cams.items()):
             stale = [w for w in list(d) if now - seen.get(w, 0) > STALE_SEC]
             for w in stale:
