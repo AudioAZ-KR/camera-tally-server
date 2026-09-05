@@ -120,7 +120,8 @@ async def demo_close(ws, room):
     except Exception: pass
     try: await ws.close()
     except Exception: pass
-SERVER_VER = "2026-09-05.10"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+RELAY_KEY = os.environ.get("RELAY_KEY", "ftr1_45045f7f2255f91c1d2ead3c11e1")   # 새 서버 세대 키. 이 키를 실은 빌드만 온라인 브릿지 허용 → 과거 배포판 전부 차단(2026-09-06). 바꾸려면 이 값과 host_app.RELAY_KEY를 같이 교체.
+SERVER_VER = "2026-09-06.1"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -278,6 +279,17 @@ async def ws_handler(request):
                     if _room_owned_by_other(rm, key):                # 다른 호스트의 방 → 브릿지 거부 (탈리 위조 방지)
                         print(f"[guard ] bridge refused: room {rm} owned by another host ({ip})", flush=True)
                         await ws.send_str(json.dumps({"type": "error", "code": "room_owned"})); await ws.close(); return ws
+                    # 구버전 배포판 차단(2026-09-05 사장님 지시 "1.0 버전대부터 새 서버"): 온라인 서버는 1.0 신 체계 앱 전용.
+                    # 판별 = auth(token/demo) + room_key 둘 다 있어야 함 — room_key는 1.0 (36)부터 항상 실리므로
+                    # 지인 배포 v0.9(auth 없음)와 v1.15~1.16.x·1.0 초기 빌드(room_key 없음)가 전부 걸러진다.
+                    # 내장 서버(호스트 앱 자신)는 루프백으로 붙으므로 예외 — 오프라인 모드는 그대로.
+                    # 판정은 위조 가능한 X-Forwarded-For(ip)가 아니라 실소켓 주소(request.remote)로.
+                    peer = request.remote or ""
+                    if peer not in ("127.0.0.1", "::1", "localhost") and not ((auth.get("token") or auth.get("demo")) and key and str(auth.get("relay_key") or "") == RELAY_KEY):
+                        print(f"[guard ] legacy bridge refused {rm} from {ip} (peer {peer})", flush=True)
+                        await ws.send_str(json.dumps({"type": "upgrade_required",
+                                                      "msg": "This version is no longer supported. Get the latest Flare Tally at audioazpro.com"}))
+                        await ws.close(); return ws
                     mode = "licensed" if await verify_license(str(auth.get("token", "")), str(auth.get("device", ""))) else "demo"
                     device = str(auth.get("device") or auth.get("demo") or ("ip-" + ip))[:64]
                     if mode == "demo" and demo_left(device, auth.get("started")) <= 0 and time.time() - demo_last_seen.get(device, 0) > DEMO_GRACE_SEC:
