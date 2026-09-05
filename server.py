@@ -29,6 +29,7 @@ token_ws: dict = {}            # token -> 이 토큰을 마지막으로 보고�
 #                     (2026-09-05 사장님 "온라인 서버도 7일 무료체험으로 동일하게" — 하루 1시간 제한 폐지)
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://lkbbenyvchddsjsihofv.supabase.co")
 SUPABASE_ANON = os.environ.get("SUPABASE_ANON", "sb_publishable_sMTkTGD-1CktZQqirrjk6Q_0mxgpRG_")   # 공개(publishable) 키
+STATUS_KEY = os.environ.get("STATUS_KEY", "")   # 접속자 현황(/status·/status.html) 접근 키. 미설정이면 현황 비활성(503)
 DEMO_DAYS = float(os.environ.get("DEMO_DAYS", "7"))
 demo_first: dict = {}          # device -> 데모 최초 확인 epoch (메모리; 재배포 시 초기화 — 앱이 보내는 started가 1차 근거)
 demo_last_seen: dict = {}      # device -> 데모 브릿지가 마지막으로 접속해 있던 epoch (실행 중 만료 유예용)
@@ -118,7 +119,7 @@ async def demo_close(ws, room):
     except Exception: pass
     try: await ws.close()
     except Exception: pass
-SERVER_VER = "2026-09-05.8"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-05.9"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -573,6 +574,48 @@ async def room_status(request):
     active = bool(bridges.get(code)) or code == "DEMO"
     return web.json_response({"ok": True, "active": active, "cams": len(cams.get(code, {}))})
 
+def _status_rooms():
+    """현재 방별 접속 현황(민감정보 제외: 방코드·호스트 온라인/모드·카메라 번호·큐 수·PGM/PVW만)."""
+    keys = set()
+    for d in (rooms, bridges, cams, cue_ops, cue_recv, state):
+        keys.update(d.keys())
+    out = []
+    for rm in sorted(keys):
+        br = bridges.get(rm) or set()
+        mode = None
+        for w in br:
+            m = bridge_meta.get(w)
+            if m: mode = m.get("mode"); break
+        st = state.get(rm, {})
+        pgm = st.get("pgm") or ([st["program"]] if st.get("program") else [])
+        pvw = st.get("pvw") or ([st["preview"]] if st.get("preview") else [])
+        out.append({
+            "room": rm,
+            "host_online": bool(br),
+            "host_mode": mode,
+            "cams": roster(rm),
+            "cam_count": len(cams.get(rm, {})),
+            "cue_op": bool(cue_ops.get(rm)),
+            "cue_recv": len(cue_recv.get(rm, {})),
+            "pgm": pgm, "pvw": pvw,
+        })
+    return out
+
+async def status(request):
+    """GET /status?key=KEY → 접속자 현황 JSON. STATUS_KEY 미설정이면 비활성(503)."""
+    if not STATUS_KEY:
+        return web.json_response({"ok": False, "error": "disabled",
+                                  "hint": "Render 환경변수 STATUS_KEY 를 설정하면 켜집니다."}, status=503)
+    if request.query.get("key", "") != STATUS_KEY:
+        return web.json_response({"ok": False, "error": "auth"}, status=401)
+    rl = _status_rooms()
+    totals = {"rooms": len(rl),
+              "hosts": sum(1 for r in rl if r["host_online"]),
+              "cams": sum(r["cam_count"] for r in rl),
+              "cue_recv": sum(r["cue_recv"] for r in rl)}
+    return web.json_response({"ok": True, "ver": SERVER_VER, "now": now_ms(),
+                              "totals": totals, "rooms": rl})
+
 async def ios_activity(request):
     """아이폰 앱이 Live Activity 푸시 토큰을 등록/해제. POST {room, cam, token} / DELETE {token}"""
     try:
@@ -618,6 +661,7 @@ def make_app():
     a.router.add_get("/ws", ws_handler)
     a.router.add_get("/health", health)
     a.router.add_get("/room", room_status)
+    a.router.add_get("/status", status)
     a.router.add_post("/telemetry", telemetry)
     a.router.add_post("/ios/activity", ios_activity)
     a.router.add_delete("/ios/activity", ios_activity)

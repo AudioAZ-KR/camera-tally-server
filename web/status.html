@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>접속자 현황 — Flare Tally</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/theme.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: var(--font); }
+  body { padding: max(env(safe-area-inset-top), 14px) 14px 40px; -webkit-text-size-adjust: 100%; }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+  header .ver { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  header .live { margin-left: auto; display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .dot.on { background: var(--tally-pvw); }
+  .dot.off { background: var(--tally-pgm); }
+  .totals { display: flex; gap: 18px; flex-wrap: wrap; padding: 13px 2px; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  .totals b { color: var(--text); font-weight: 700; }
+  .msg { padding: 40px 8px; text-align: center; color: var(--muted); font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
+  td { font-size: 13.5px; }
+  td.room { font-family: var(--mono); font-weight: 700; letter-spacing: .04em; }
+  .host { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+  .host .d { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
+  .host.online .d { background: var(--tally-pvw); }
+  .mode { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-left: 2px; }
+  .off { color: var(--dim); }
+  .cams { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  .cams .n { color: var(--text); font-weight: 700; }
+  .st { font-family: var(--mono); font-size: 12.5px; display: flex; gap: 10px; }
+  .pgm { color: var(--tally-pgm); font-weight: 700; }
+  .pvw { color: var(--tally-pvw); font-weight: 700; }
+  .st .lbl { color: var(--dim); }
+  .cue { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  .cue .op { color: var(--tally-pvw); }
+  .foot { margin-top: 22px; text-align: center; font-size: 11px; color: var(--dim); font-family: var(--mono); }
+  @media (max-width: 560px) { th:nth-child(4), td:nth-child(4) { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>접속자 현황</h1>
+    <span class="ver" id="ver"></span>
+    <span class="live"><span class="dot" id="dot"></span><span id="livetxt">연결 중…</span></span>
+  </header>
+  <div class="totals" id="totals"></div>
+  <div id="body"><div class="msg">불러오는 중…</div></div>
+  <div class="foot">3초마다 자동 갱신 · Flare Tally 서버</div>
+</div>
+<script>
+  var KEY = new URLSearchParams(location.search).get('key') || '';
+  var body = document.getElementById('body');
+  var totalsEl = document.getElementById('totals');
+  var dot = document.getElementById('dot'), livetxt = document.getElementById('livetxt'), verEl = document.getElementById('ver');
+  var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); };
+
+  function modeLabel(m){ return m === 'licensed' ? '라이선스' : (m === 'demo' ? '데모' : ''); }
+
+  function render(d){
+    verEl.textContent = d.ver ? ('서버 ' + d.ver) : '';
+    var t = d.totals || {};
+    totalsEl.innerHTML =
+      '방 <b>' + (t.rooms||0) + '</b>' +
+      ' · 호스트 <b>' + (t.hosts||0) + '</b>' +
+      ' · 카메라 <b>' + (t.cams||0) + '</b>' +
+      ' · 큐 수신 <b>' + (t.cue_recv||0) + '</b>';
+    var rooms = d.rooms || [];
+    if (!rooms.length){ body.innerHTML = '<div class="msg">접속 중인 방이 없습니다.</div>'; return; }
+    var rows = rooms.map(function(r){
+      var host = r.host_online
+        ? '<span class="host online"><span class="d"></span>온라인<span class="mode">' + esc(modeLabel(r.host_mode)) + '</span></span>'
+        : '<span class="host off"><span class="d"></span><span class="off">오프라인</span></span>';
+      var camNums = (r.cams && r.cams.length) ? r.cams.join(' ') : '—';
+      var cams = '<span class="n">' + (r.cam_count||0) + '</span>대' +
+                 (r.cams && r.cams.length ? ' <span style="color:var(--dim)">#' + esc(camNums) + '</span>' : '');
+      var pgm = (r.pgm && r.pgm.length) ? r.pgm.join(',') : '—';
+      var pvw = (r.pvw && r.pvw.length) ? r.pvw.join(',') : '—';
+      var st = '<span><span class="lbl">PGM</span> <span class="pgm">' + esc(pgm) + '</span></span>' +
+               '<span><span class="lbl">PVW</span> <span class="pvw">' + esc(pvw) + '</span></span>';
+      var cue = r.cue_recv || r.cue_op
+        ? ((r.cue_op ? '<span class="op">OP</span> ' : '') + '수신 ' + (r.cue_recv||0))
+        : '<span class="off">—</span>';
+      return '<tr><td class="room">' + esc(r.room) + '</td>' +
+             '<td>' + host + '</td>' +
+             '<td class="cams">' + cams + '</td>' +
+             '<td class="st">' + st + '</td>' +
+             '<td class="cue">' + cue + '</td></tr>';
+    }).join('');
+    body.innerHTML = '<table><thead><tr><th>방</th><th>호스트</th><th>카메라</th><th>탈리(PGM/PVW)</th><th>큐</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function setLive(ok, txt){ dot.className = 'dot ' + (ok ? 'on' : 'off'); livetxt.textContent = txt; }
+
+  async function tick(){
+    if (!KEY){ setLive(false, '키 없음'); body.innerHTML = '<div class="msg">주소에 ?key=… 가 필요합니다.</div>'; return; }
+    try {
+      var r = await fetch('/status?key=' + encodeURIComponent(KEY) + '&t=' + Date.now(), { cache: 'no-store' });
+      if (r.status === 401){ setLive(false, '키 오류'); body.innerHTML = '<div class="msg">접근 키가 올바르지 않습니다.</div>'; return; }
+      if (r.status === 503){ setLive(false, '비활성'); body.innerHTML = '<div class="msg">현황이 아직 켜지지 않았습니다.<br>(서버 환경변수 STATUS_KEY 설정 필요)</div>'; return; }
+      var d = await r.json();
+      if (!d.ok){ setLive(false, '오류'); return; }
+      render(d);
+      var now = new Date();
+      setLive(true, '갱신 ' + now.toTimeString().slice(0,8));
+    } catch(e){
+      setLive(false, '연결 끊김');
+    }
+  }
+  tick();
+  setInterval(tick, 3000);
+</script>
+</body>
+</html>
