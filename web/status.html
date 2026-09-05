@@ -94,7 +94,7 @@
         var ms = rtt[String(c)];
         var ping = (ms == null)
           ? '<span class="ping na">–</span>'
-          : '<span class="ping ' + (ms < 80 ? 'good' : (ms < 200 ? 'mid' : 'bad')) + '">' + ms + 'ms</span>';
+          : '<span class="ping ' + (ms < 200 ? 'good' : (ms < 500 ? 'mid' : 'bad')) + '">' + ms + 'ms</span>';
         return '<span class="camitem">#' + c + ' ' + ping + '</span>';
       }).join('');
       var pingCell = pingChips ? '<div class="camlist">' + pingChips + '</div>' : '<span class="off">—</span>';
