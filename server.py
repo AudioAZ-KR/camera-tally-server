@@ -116,7 +116,7 @@ async def demo_close(ws, room):
     except Exception: pass
     try: await ws.close()
     except Exception: pass
-SERVER_VER = "2026-09-05.4"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-05.5"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -560,6 +560,8 @@ async def _ios_activity(request, d, token, device):
     if d.get("push"): apns_live.set_push(token, str(d["push"]).strip().lower())
     if "banner" in d: apns_live.set_banner(token, bool(d.get("banner")))
     if "keep" in d: apns_live.set_keep(token, bool(d.get("keep")))
+    if "active" in d: apns_live.set_active(token, bool(d.get("active")), d.get("alerts"))   # 오프라인(LAN) 모드 폰이 클라우드엔 HTTP로만 전면/후면을 알림 (소켓은 LAN 서버에)
+    if "suspend" in d: apns_live.mark_sleep(token, bool(d.get("suspend")))
     apns_live.set_lang(token, d.get("lang"))
     print(f"[ios   ] activity {room} cam={cam} ({apns_live.count(room)} phones)", flush=True)
     # 등록 직후 현재 상태를 한 번 보내 아일랜드가 바로 맞춰지게
