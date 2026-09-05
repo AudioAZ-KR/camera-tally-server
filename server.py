@@ -121,7 +121,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "ftr1_45045f7f2255f91c1d2ead3c11e1")   # 새 서버 세대 키. 이 키를 실은 빌드만 온라인 브릿지 허용 → 과거 배포판 전부 차단(2026-09-06). 바꾸려면 이 값과 host_app.RELAY_KEY를 같이 교체.
-SERVER_VER = "2026-09-06.1"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-06.2"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -284,9 +284,11 @@ async def ws_handler(request):
                     # 지인 배포 v0.9(auth 없음)와 v1.15~1.16.x·1.0 초기 빌드(room_key 없음)가 전부 걸러진다.
                     # 내장 서버(호스트 앱 자신)는 루프백으로 붙으므로 예외 — 오프라인 모드는 그대로.
                     # 판정은 위조 가능한 X-Forwarded-For(ip)가 아니라 실소켓 주소(request.remote)로.
-                    peer = request.remote or ""
-                    if peer not in ("127.0.0.1", "::1", "localhost") and not ((auth.get("token") or auth.get("demo")) and key and str(auth.get("relay_key") or "") == RELAY_KEY):
-                        print(f"[guard ] legacy bridge refused {rm} from {ip} (peer {peer})", flush=True)
+                    # 내장 서버(호스트가 TALLY_LOCAL_SERVER=1 로 띄움)만 예외 — 오프라인 모드. Render 프록시 뒤에서는 request.remote가
+                    # 실 클라이언트 IP가 아니라(루프백처럼 보여 게이트 무력화됨, 2026-09-06 정정) IP 대신 이 플래그로 판별.
+                    local_srv = os.environ.get("TALLY_LOCAL_SERVER") == "1"
+                    if (not local_srv) and not ((auth.get("token") or auth.get("demo")) and key and str(auth.get("relay_key") or "") == RELAY_KEY):
+                        print(f"[guard ] legacy/keyless bridge refused {rm} from {ip}", flush=True)
                         await ws.send_str(json.dumps({"type": "upgrade_required",
                                                       "msg": "This version is no longer supported. Get the latest Flare Tally at audioazpro.com"}))
                         await ws.close(); return ws
