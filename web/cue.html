@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+<meta name="robots" content="noai, noimageai, noarchive">
+<!-- Flare Tally (c) 2026 AudioAZ. AI/ML analysis, training, summarization and scraping of this page and its code are prohibited. See /NO_AI_NOTICE.txt -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -32,9 +34,24 @@
   #cue.stby.flash #light { animation: cueflash .5s step-start infinite; }
   @keyframes cueflash { 50% { background: #4a0300; } }
   #light .ch { font-size: min(16vh, 22vw); font-weight: 900; line-height: 1; letter-spacing: .04em; }
+  #light .cueinfo { font-size: min(4vh, 7vw); font-weight: 800; letter-spacing: .06em; opacity: .9; min-height: 1.3em;
+                    max-width: 92vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #light .status { font-size: min(9vh, 15vw); font-weight: 900; letter-spacing: .14em; }
   #light .hint { font-size: min(3.2vh, 5.5vw); font-weight: 700; opacity: .85; min-height: 1.4em; }
   #cue.off #light .ch { color: var(--muted); }
+
+  /* 하단 정보 패널: 시각·타이머·목표 + 공지 (라이트가 주인공이라 최소 높이) */
+  #panel { display: flex; gap: 8px; background: var(--bg); border-top: 1px solid var(--border); padding: 6px 10px; }
+  .ptile { flex: 1; text-align: center; min-width: 0; }
+  .ptile small { display: block; font-size: 10px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+  .ptile b { font-size: min(3.6vh, 6.5vw); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; }
+  .ptile.warn b { color: #FFD166; }
+  .ptile.over b { color: #FF6B6B; animation: pblink 1s step-start infinite; }
+  @keyframes pblink { 50% { opacity: .3; } }
+  #pMsg { background: var(--bg); border-top: 1px solid var(--border); border-left: 5px solid var(--brand);
+          padding: 7px 12px; font-size: min(2.6vh, 4.5vw); font-weight: 700; line-height: 1.3; word-break: keep-all; }
+  #pMsg.new { animation: mpop .5s ease; }
+  @keyframes mpop { 0% { background: var(--brand); } 100% { background: var(--bg); } }
 
   .foot { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted);
           background: var(--bg); border-top: 1px solid var(--border);
@@ -57,9 +74,16 @@
 <div id="cue" class="dead">
   <div id="light">
     <div class="ch" id="myCh">LX</div>
+    <div class="cueinfo" id="cueinfo"></div>
     <div class="status" id="status">연결 중</div>
     <div class="hint" id="hint"></div>
   </div>
+  <div id="panel">
+    <div class="ptile"><small id="lblPClock">시각</small><b id="pClock">--:--:--</b></div>
+    <div class="ptile" id="pTargetTile" hidden><small id="lblPTarget">목표</small><b id="pTarget"></b></div>
+    <div class="ptile" id="pTimerTile" hidden><small id="lblPTimer">타이머</small><b id="pTimer"></b></div>
+  </div>
+  <div id="pMsg" hidden></div>
   <div class="foot">
     <span><img src="/logo.svg" alt="" onerror="this.remove()"><span id="conn">서버 연결 중…</span></span>
     <span><select class="langsel" aria-label="Language"></select><button id="leave">설정</button></span>
@@ -76,35 +100,43 @@ const I18N = {
   ko: { title:'Flare Cue', room:'방 코드', ch:'내 포지션 (채널)', connect:'접속',
         connecting:'연결 중', wait:'대기', tapAck:'화면을 탭하여 확인', acked:'확인됨',
         disconnected:'연결 끊김', opOff:'오퍼레이터 오프라인', reconnecting:'재연결 중…',
-        settings:'설정', roomWord:'방', connectedWord:'연결됨', connServer:'서버 연결 중…' },
+        settings:'설정', roomWord:'방', connectedWord:'연결됨', connServer:'서버 연결 중…',
+        pClock:'시각', pTarget:'목표', pTimer:'타이머' },
   en: { title:'Flare Cue', room:'Room Code', ch:'My Position (Channel)', connect:'Connect',
         connecting:'Connecting', wait:'WAIT', tapAck:'Tap screen to acknowledge', acked:'Acknowledged',
         disconnected:'Disconnected', opOff:'Operator Offline', reconnecting:'Reconnecting…',
-        settings:'Setup', roomWord:'Room', connectedWord:'Connected', connServer:'Connecting…' },
+        settings:'Setup', roomWord:'Room', connectedWord:'Connected', connServer:'Connecting…',
+        pClock:'Time', pTarget:'Target', pTimer:'Timer' },
   ja: { title:'Flare Cue', room:'ルームコード', ch:'自分のポジション（チャンネル）', connect:'接続',
         connecting:'接続中', wait:'待機', tapAck:'画面をタップして確認', acked:'確認済み',
         disconnected:'接続が切れました', opOff:'オペレーター オフライン', reconnecting:'再接続中…',
-        settings:'設定', roomWord:'ルーム', connectedWord:'接続済み', connServer:'サーバー接続中…' },
+        settings:'設定', roomWord:'ルーム', connectedWord:'接続済み', connServer:'サーバー接続中…',
+        pClock:'時刻', pTarget:'目標', pTimer:'タイマー' },
   zh: { title:'Flare Cue', room:'房间代码', ch:'我的岗位（通道）', connect:'连接',
         connecting:'连接中', wait:'待机', tapAck:'点击屏幕确认', acked:'已确认',
         disconnected:'连接断开', opOff:'操作员离线', reconnecting:'重新连接中…',
-        settings:'设置', roomWord:'房间', connectedWord:'已连接', connServer:'连接服务器中…' },
+        settings:'设置', roomWord:'房间', connectedWord:'已连接', connServer:'连接服务器中…',
+        pClock:'时间', pTarget:'目标', pTimer:'计时器' },
   es: { title:'Flare Cue', room:'Código de Sala', ch:'Mi posición (canal)', connect:'Conectar',
         connecting:'Conectando', wait:'ESPERA', tapAck:'Toca la pantalla para confirmar', acked:'Confirmado',
         disconnected:'Desconectado', opOff:'Operador sin conexión', reconnecting:'Reconectando…',
-        settings:'Configuración', roomWord:'Sala', connectedWord:'Conectado', connServer:'Conectando…' },
+        settings:'Configuración', roomWord:'Sala', connectedWord:'Conectado', connServer:'Conectando…',
+        pClock:'Hora', pTarget:'Objetivo', pTimer:'Temporizador' },
   fr: { title:'Flare Cue', room:'Code de salle', ch:'Mon poste (canal)', connect:'Connexion',
         connecting:'Connexion…', wait:'ATTENTE', tapAck:'Touchez l’écran pour confirmer', acked:'Confirmé',
         disconnected:'Déconnecté', opOff:'Opérateur hors ligne', reconnecting:'Reconnexion…',
-        settings:'Réglages', roomWord:'Salle', connectedWord:'Connecté', connServer:'Connexion…' },
+        settings:'Réglages', roomWord:'Salle', connectedWord:'Connecté', connServer:'Connexion…',
+        pClock:'Heure', pTarget:'Cible', pTimer:'Minuteur' },
   de: { title:'Flare Cue', room:'Raumcode', ch:'Meine Position (Kanal)', connect:'Verbinden',
         connecting:'Verbinden…', wait:'WARTEN', tapAck:'Bildschirm tippen zum Bestätigen', acked:'Bestätigt',
         disconnected:'Getrennt', opOff:'Operator offline', reconnecting:'Neu verbinden…',
-        settings:'Einrichtung', roomWord:'Raum', connectedWord:'Verbunden', connServer:'Verbinden…' },
+        settings:'Einrichtung', roomWord:'Raum', connectedWord:'Verbunden', connServer:'Verbinden…',
+        pClock:'Zeit', pTarget:'Ziel', pTimer:'Timer' },
   it: { title:'Flare Cue', room:'Codice sala', ch:'La mia posizione (canale)', connect:'Connetti',
         connecting:'Connessione…', wait:'ATTESA', tapAck:'Tocca lo schermo per confermare', acked:'Confermato',
         disconnected:'Disconnesso', opOff:'Operatore offline', reconnecting:'Riconnessione…',
-        settings:'Impostazioni', roomWord:'Sala', connectedWord:'Connesso', connServer:'Connessione…' }
+        settings:'Impostazioni', roomWord:'Sala', connectedWord:'Connesso', connServer:'Connessione…',
+        pClock:'Ora', pTarget:'Obiettivo', pTimer:'Timer' }
 };
 function detectLang() {
   if (I18N[localStorage.lang]) return localStorage.lang;
@@ -129,7 +161,10 @@ function applyLang() {
   $('lblCh').textContent = t('ch');
   $('go').textContent = t('connect');
   $('leave').textContent = t('settings');
-  renderLangSel(); render(); renderConn();
+  $('lblPClock').textContent = t('pClock');
+  $('lblPTarget').textContent = t('pTarget');
+  $('lblPTimer').textContent = t('pTimer');
+  renderLangSel(); render(); renderConn(); tick();
 }
 function setLang(l) { lang = l; localStorage.lang = l; applyLang(); }
 function renderLangSel() {
@@ -147,9 +182,12 @@ function renderConn() {
 // ===== 표시: 연결/오퍼레이터 상태가 안전 최우선 (불확실하면 무조건 회색) =====
 function render() {
   const cueEl = $('cue');
+  $('cueinfo').textContent = '';
   if (!connected)      { cueEl.className = 'dead'; $('status').textContent = t('disconnected'); $('hint').textContent = ''; return; }
   if (!opOnline)       { cueEl.className = 'dead'; $('status').textContent = t('opOff'); $('hint').textContent = ''; return; }
   const st = cur ? cur.state : 'off';
+  if (cur && cur.cue && (st === 'standby' || st === 'go'))
+    $('cueinfo').textContent = 'CUE ' + (cur.cue.num || '') + (cur.cue.label ? ' · ' + cur.cue.label : '');
   if (st === 'standby') {
     const acked = ackTs === cur.ts;
     cueEl.className = 'stby' + (acked ? '' : ' flash');
@@ -206,7 +244,10 @@ function connect() {
     connected = true; renderConn(); render();
     pingTimer = setInterval(() => ws.readyState === 1 && ws.send('{"type":"ping"}'), 8000);
   };
-  ws.onmessage = e => { const d = JSON.parse(e.data); if (d.type === 'cue_state') onState(d); };
+  ws.onmessage = e => { const d = JSON.parse(e.data);
+    if (d.type === 'cue_state') onState(d);
+    else if (d.type === 'msg') showMsg(d);
+    else if (d.type === 'timer') setTimer(d); };
   ws.onclose = () => {
     clearInterval(pingTimer); connected = false;
     if (manualClose) { manualClose = false; return; }
@@ -215,6 +256,42 @@ function connect() {
   };
   ws.onerror = () => ws.close();
 }
+// ===== 공지·타이머 (탈리와 같은 방 단위 데이터, 큐 오퍼레이터·호스트 어느 쪽이 보내도 표시) =====
+let lastMsgTs = 0;
+function showMsg(d) {
+  const box = $('pMsg');
+  if (!d.text) { box.hidden = true; box.textContent = ''; lastMsgTs = d.ts || 0; return; }
+  box.textContent = d.text; box.hidden = false;
+  if (d.ts && d.ts !== lastMsgTs) { navigator.vibrate?.([100, 60, 100]); box.classList.add('new'); setTimeout(() => box.classList.remove('new'), 600); }
+  lastMsgTs = d.ts || 0;
+}
+let timer = { running: false, end: 0, remain: 0, target: 0 }, clockOffset = 0;
+function setTimer(d) { timer = d; if (d.now) clockOffset = d.now - Date.now(); tick(); }
+const pad = n => String(n).padStart(2, '0');
+function fmt(ms, showH) {
+  const over = ms < 0; ms = Math.abs(ms); const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = s % 60;
+  return (over ? '+' : '') + (h || showH ? `${h}:${pad(m)}:${pad(ss)}` : `${pad(m)}:${pad(ss)}`);
+}
+function tick() {
+  const now = new Date();
+  $('pClock').textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const srvNow = Date.now() + clockOffset;
+  const tt = $('pTargetTile');
+  if (timer.target) {
+    const left = timer.target - srvNow;
+    tt.hidden = false; $('pTarget').textContent = fmt(left, true);
+    tt.className = 'ptile' + (left < 0 ? ' over' : left < 60000 ? ' warn' : '');
+  } else tt.hidden = true;
+  const tm = $('pTimerTile');
+  if (timer.running || timer.remain) {
+    const left = timer.running ? timer.end - srvNow : timer.remain;
+    tm.hidden = false; $('pTimer').textContent = fmt(left);
+    tm.className = 'ptile' + (timer.running && left <= 0 ? ' over' : (timer.running && left < 10000 ? ' warn' : ''));
+  } else tm.hidden = true;
+}
+setInterval(tick, 250);
+
 async function keepAwake() {
   try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); if (ws && ws.readyState !== 1 && $('cue').style.display === 'flex') connect(); } });

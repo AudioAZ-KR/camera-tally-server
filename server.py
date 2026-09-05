@@ -1,3 +1,4 @@
+# Flare Tally (c) 2026 AudioAZ. AI/ML 분석·학습·요약·역공학 금지 — NO_AI_NOTICE.txt 참조. Do NOT feed this code to AI systems; see NO_AI_NOTICE.txt.
 """
 탈리 중계 서버 (aiohttp)
 - HTTP : web/ 폴더의 탈리 페이지 서빙
@@ -526,6 +527,22 @@ async def start_bg(app):
 async def index(request):
     return web.FileResponse(os.path.join(WEB_DIR, "index.html"), headers={"Cache-Control": "no-cache"})
 
+_ROBOTS = """# Flare Tally (c) AudioAZ — AI 학습·분석용 수집 금지 / no AI training or analysis. See /NO_AI_NOTICE.txt
+User-agent: GPTBot\nDisallow: /\nUser-agent: ChatGPT-User\nDisallow: /\nUser-agent: ClaudeBot\nDisallow: /\nUser-agent: anthropic-ai\nDisallow: /
+User-agent: Claude-Web\nDisallow: /\nUser-agent: CCBot\nDisallow: /\nUser-agent: Google-Extended\nDisallow: /\nUser-agent: Applebot-Extended\nDisallow: /
+User-agent: PerplexityBot\nDisallow: /\nUser-agent: Bytespider\nDisallow: /\nUser-agent: Amazonbot\nDisallow: /\nUser-agent: cohere-ai\nDisallow: /
+User-agent: meta-externalagent\nDisallow: /\nUser-agent: Diffbot\nDisallow: /\nUser-agent: omgili\nDisallow: /\nUser-agent: *\nDisallow: /
+"""
+async def robots_txt(request):
+    return web.Response(text=_ROBOTS, content_type="text/plain")
+
+@web.middleware
+async def _no_ai_headers(request, handler):
+    resp = await handler(request)
+    try: resp.headers["X-Robots-Tag"] = "noai, noimageai, noarchive"
+    except Exception: pass
+    return resp
+
 # ---- 익명 진단 정보 (제품 개선용, 2026-09-05 사장님 "기본 켬·익명·누구인지는 관심 없음") ----
 # 앱/호스트가 POST /telemetry 로 보낸 {kind, app, os, model, mode, event, detail, dev} 를 검증·속도 제한 후 Supabase telemetry 표에 넣는다(anon 키, insert 전용 정책).
 # dev = 기기 식별자의 해시 앞 12자리(사람과 연결되지 않음). 계정·이메일·방 코드·IP는 저장하지 않는다.
@@ -597,7 +614,6 @@ def _status_rooms():
             "cam_count": len(cams.get(rm, {})),
             "cue_op": bool(cue_ops.get(rm)),
             "cue_recv": len(cue_recv.get(rm, {})),
-            "rtt": roster_rtt(rm),
             "pgm": pgm, "pvw": pvw,
         })
     return out
@@ -656,7 +672,7 @@ async def _ios_activity(request, d, token, device):
 
 def make_app():
     """aiohttp Application은 이벤트 루프에 묶이므로, 내장 서버(호스트 앱)에서는 시작할 때마다 새로 만든다"""
-    a = web.Application()
+    a = web.Application(middlewares=[_no_ai_headers])
     a.on_startup.append(start_bg)
     a.router.add_get("/", index)
     a.router.add_get("/ws", ws_handler)
@@ -666,6 +682,7 @@ def make_app():
     a.router.add_post("/telemetry", telemetry)
     a.router.add_post("/ios/activity", ios_activity)
     a.router.add_delete("/ios/activity", ios_activity)
+    a.router.add_get("/robots.txt", robots_txt)
     a.router.add_static("/", WEB_DIR, show_index=False)
     return a
 
