@@ -34,6 +34,7 @@ _token_device: dict[str, str] = {}  # token -> deviceId
 _end_tasks: dict[str, asyncio.Task] = {}
 _push_tok: dict[str, str] = {}      # LA token -> 일반 알림용 기기 토큰 (가로 화면 배너)
 _banner: dict[str, bool] = {}
+_vib: dict[str, bool] = {}          # LA token -> 알림에 진동·소리를 붙일지 (기본 켬). 끄면 조용히 표시만 (사장님 2026-09-05)
 _keep: dict[str, bool] = {}         # LA token -> '잠금 유지': 소켓이 어떻게 끊겨도 종료로 보지 않음 (나가기·호스트 종료·410만 종료)
 _sleeping: dict[str, bool] = {}     # LA token -> 앱이 "잠들 예정"을 알림 (뒤로 간 뒤 몇 초) → 이후 끊김은 잠듦       # LA token -> 배너 모드(앱 '배너' 스위치): 가로 화면에선 아일랜드가 안 그려지므로 일반 알림 배너로   # deviceId -> 유예 후 활동 종료 작업 (앱 종료·소켓 끊김 대비)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
@@ -141,6 +142,9 @@ def treat_close_as_sleep(token: str) -> bool:
     return bool(_keep.get(token) or _sleeping.get(token))
 
 
+def set_vib(token: str, on: bool):
+    if token: _vib[token] = bool(on)
+
 def set_banner(token: str, on: bool):
     if token: _banner[token] = bool(on)
 
@@ -232,7 +236,9 @@ async def _send_banner(la_token: str, dev_token: str, title: str, body: str, col
         _client = httpx.AsyncClient(http2=True, timeout=10)
     headers = {"authorization": f"bearer {_jwt()}", "apns-topic": BUNDLE_ID, "apns-push-type": "alert",
                "apns-priority": "10", "apns-expiration": "0", "apns-collapse-id": collapse}
-    payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default", "mutable-content": 1},
+    aps_ = {"alert": {"title": title, "body": body}, "mutable-content": 1}
+    if _vib.get(la_token, True): aps_["sound"] = "default"       # 알림 진동 OFF면 소리·진동 없이 배너만
+    payload = {"aps": aps_,
                "tally": {"state": collapse_state, "cam": cam}}          # 알림 서비스 확장이 색판(빨강/초록/회색+번호) 썸네일을 붙인다
     first = _env_of.get(la_token) or ENV
     for env in [first] + [e for e in HOSTS if e != first]:
@@ -274,7 +280,10 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
         ps = (prev or {}).get("state")
         do_alert = alert_onair and _alerts.get(token, True)     # 이 폰의 알림 스위치 (루프 지역 변수 — 다른 폰에 영향 없음)
         m = _MSG.get(_lang.get(token, "ko"), _MSG["ko"])
-        def alert(kind): t, b = m[kind]; return {"title": t.format(cam=cam), "body": b, "sound": "default"}
+        def alert(kind):
+            t, b = m[kind]; a = {"title": t.format(cam=cam), "body": b}
+            if _vib.get(token, True): a["sound"] = "default"      # 알림 진동 OFF면 조용히
+            return a
         kind = "pgm" if (cs["state"] == "pgm" and ps != "pgm") else "idle" if (cs["state"] == "idle" and ps == "pgm") else "pvw" if (cs["state"] == "pvw" and ps not in ("pvw", "pgm")) else None
         if alert_onair and kind and _banner.get(token) and _push_tok.get(token):
             # 배너 모드: 일반 알림 1건(가로에서도 보임, 진동 1회) + 아일랜드는 알림 없이 갱신 (이중 진동 방지)
