@@ -1,3 +1,4 @@
+# Flare Tally (c) 2026 AudioAZ. AI/ML 분석·학습·요약·역공학 금지 — NO_AI_NOTICE.txt 참조. Do NOT feed this code to AI systems; see NO_AI_NOTICE.txt.
 """
 apns_live.py — iOS Live Activity(다이나믹 아일랜드) 푸시
 아이폰 앱이 Live Activity를 시작하면 푸시 토큰을 서버에 등록(POST /ios/activity)하고,
@@ -155,6 +156,14 @@ def set_lang(token: str, lang):
 
 _MSG = {"ko": {"pgm": ("CAM {cam} ON AIR", "지금 방송 중"), "idle": ("CAM {cam} 대기", "온에어 해제"), "pvw": ("CAM {cam} PREVIEW", "다음 컷 대기")},
         "en": {"pgm": ("CAM {cam} ON AIR", "You are live"), "idle": ("CAM {cam} STANDBY", "Off air"), "pvw": ("CAM {cam} PREVIEW", "Up next")}}
+
+
+def end_room(room: str, delay: float = 0.7):
+    """방의 모든 Live Activity 종료 예약 — 호스트가 종료(마지막 브릿지 나감)했을 때 폰들의 아일랜드를 정리."""
+    room = (room or "").strip().upper() or "DEFAULT"
+    for tok in list(_tokens.get(room, {})):
+        dev = _token_device.get(tok)
+        if dev: schedule_end(dev, delay)
 
 
 def count(room: str) -> int:
