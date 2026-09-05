@@ -118,7 +118,7 @@ async def demo_close(ws, room):
     except Exception: pass
     try: await ws.close()
     except Exception: pass
-SERVER_VER = "2026-09-05.7"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-05.8"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -525,6 +525,44 @@ async def start_bg(app):
 async def index(request):
     return web.FileResponse(os.path.join(WEB_DIR, "index.html"), headers={"Cache-Control": "no-cache"})
 
+# ---- 익명 진단 정보 (제품 개선용, 2026-09-05 사장님 "기본 켬·익명·누구인지는 관심 없음") ----
+# 앱/호스트가 POST /telemetry 로 보낸 {kind, app, os, model, mode, event, detail, dev} 를 검증·속도 제한 후 Supabase telemetry 표에 넣는다(anon 키, insert 전용 정책).
+# dev = 기기 식별자의 해시 앞 12자리(사람과 연결되지 않음). 계정·이메일·방 코드·IP는 저장하지 않는다.
+_TELE_ALLOWED = {"kind": 8, "app": 24, "os": 40, "model": 48, "mode": 16, "event": 40, "detail": 300, "dev": 16}
+tele_hits: dict = {}   # ip -> [count, window]
+TELE_LIMIT = 60        # IP당 분당
+
+async def telemetry(request):
+    ip = request.headers.get("X-Forwarded-For", request.remote or "?").split(",")[0].strip()[:64]
+    now = time.time(); h = tele_hits.get(ip)
+    if not h or now - h[1] > 60: tele_hits[ip] = [1, now]
+    else:
+        h[0] += 1
+        if h[0] > TELE_LIMIT: return web.json_response({"ok": False}, status=429)
+    try:
+        if request.content_length and request.content_length > 4096: return web.json_response({"ok": False}, status=413)
+        d = await request.json()
+        if not isinstance(d, dict): raise ValueError("shape")
+    except Exception:
+        return web.json_response({"ok": False}, status=400)
+    row = {}
+    for k, n in _TELE_ALLOWED.items():
+        v = d.get(k)
+        if v is None: continue
+        row[k] = str(v)[:n]
+    if row.get("kind") not in ("ios", "host", "web") or not row.get("event"): return web.json_response({"ok": False}, status=400)
+    if row.get("dev") and not _re.match(r"^[0-9a-f]{6,16}$", row["dev"]): row.pop("dev", None)
+    row["ver"] = SERVER_VER
+    try:
+        import aiohttp as _aio
+        async with _aio.ClientSession() as sess:
+            async with sess.post(SUPABASE_URL + "/rest/v1/telemetry", json=row, timeout=_aio.ClientTimeout(total=5),
+                                 headers={"apikey": SUPABASE_ANON, "Authorization": "Bearer " + SUPABASE_ANON, "Content-Type": "application/json", "Prefer": "return=minimal"}) as r:
+                if r.status >= 300: print(f"[tele  ] supabase {r.status} {(await r.text())[:80]}", flush=True)
+    except Exception as e:
+        print(f"[tele  ] error {e!r}", flush=True)
+    return web.json_response({"ok": True})
+
 async def health(request):
     return web.json_response({"ok": True, "rooms": len(rooms), "ver": SERVER_VER})
 
@@ -580,6 +618,7 @@ def make_app():
     a.router.add_get("/ws", ws_handler)
     a.router.add_get("/health", health)
     a.router.add_get("/room", room_status)
+    a.router.add_post("/telemetry", telemetry)
     a.router.add_post("/ios/activity", ios_activity)
     a.router.add_delete("/ios/activity", ios_activity)
     a.router.add_static("/", WEB_DIR, show_index=False)
