@@ -35,6 +35,13 @@
   .off { color: var(--dim); }
   .cams { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
   .cams .n { color: var(--text); font-weight: 700; }
+  .camlist { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 5px; }
+  .camitem { color: var(--dim); white-space: nowrap; }
+  .ping { font-weight: 700; }
+  .ping.good { color: var(--tally-pvw); }
+  .ping.mid { color: #E7B252; }
+  .ping.bad { color: var(--tally-pgm); }
+  .ping.na { color: var(--dim); font-weight: 400; }
   .st { font-family: var(--mono); font-size: 12.5px; display: flex; gap: 10px; }
   .pgm { color: var(--tally-pgm); font-weight: 700; }
   .pvw { color: var(--tally-pvw); font-weight: 700; }
@@ -79,9 +86,16 @@
       var host = r.host_online
         ? '<span class="host online"><span class="d"></span>온라인<span class="mode">' + esc(modeLabel(r.host_mode)) + '</span></span>'
         : '<span class="host off"><span class="d"></span><span class="off">오프라인</span></span>';
-      var camNums = (r.cams && r.cams.length) ? r.cams.join(' ') : '—';
+      var rtt = r.rtt || {};
+      var camChips = (r.cams || []).map(function(c){
+        var ms = rtt[String(c)];
+        var ping = (ms == null)
+          ? '<span class="ping na">–</span>'
+          : '<span class="ping ' + (ms < 80 ? 'good' : (ms < 200 ? 'mid' : 'bad')) + '">' + ms + 'ms</span>';
+        return '<span class="camitem">#' + c + ' ' + ping + '</span>';
+      }).join('');
       var cams = '<span class="n">' + (r.cam_count||0) + '</span>대' +
-                 (r.cams && r.cams.length ? ' <span style="color:var(--dim)">#' + esc(camNums) + '</span>' : '');
+                 (camChips ? '<div class="camlist">' + camChips + '</div>' : '');
       var pgm = (r.pgm && r.pgm.length) ? r.pgm.join(',') : '—';
       var pvw = (r.pvw && r.pvw.length) ? r.pvw.join(',') : '—';
       var st = '<span><span class="lbl">PGM</span> <span class="pgm">' + esc(pgm) + '</span></span>' +
