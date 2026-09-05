@@ -121,7 +121,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-06.5"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-06.6"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -468,12 +468,27 @@ async def ws_handler(request):
                         state[room] = {**OFFLINE, "pgm": [], "pvw": []}
                         await broadcast(room)
                         asyncio.create_task(apns_live.push_room(room, state[room], notes.get(room), timers.get(room), alert_onair=False))
+                        if room != "DEMO":                     # 호스트 종료 → 폰들을 대기 방으로 내보내고 아일랜드 종료 (블립은 유예로 무시)
+                            asyncio.create_task(_close_room_if_no_host(room))
                 else:
                     cams.get(room, {}).pop(ws, None)
                     print(f"[phone ] left {room}", flush=True)
                     await broadcast_roster(room)
             _cleanup_room(room)
     return ws
+
+async def _close_room_if_no_host(room, grace: float = 4.0):
+    """호스트(브릿지)가 모두 나간 뒤 grace초 안에 다시 안 붙으면(=진짜 종료, 블립 아님):
+    방의 폰들에게 room_closed 를 보내 대기 화면으로 나가게 하고, 백그라운드 폰의 아일랜드도 종료한다."""
+    await asyncio.sleep(grace)
+    if bridges.get(room): return                 # 호스트가 다시 붙음(네트워크 블립) → 방 유지
+    msg = json.dumps({"type": "room_closed"})
+    for w in list(rooms.get(room, set())):
+        try: await w.send_str(msg)
+        except Exception: pass
+    apns_live.end_room(room)
+    print(f"[{room}] host gone → room_closed sent, activities ended", flush=True)
+
 
 async def reaper(app):
     """응답 없는 폰을 주기적으로 정리해 접속 현황을 최신으로 유지 + 데모 7일 지난 호스트 정리"""
@@ -628,7 +643,6 @@ def _status_rooms():
             "cam_count": len(cams.get(rm, {})),
             "cue_op": bool(cue_ops.get(rm)),
             "cue_recv": len(cue_recv.get(rm, {})),
-            "rtt": roster_rtt(rm),
             "pgm": pgm, "pvw": pvw,
         })
     return out
