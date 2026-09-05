@@ -37,6 +37,13 @@
   .off { color: var(--dim); }
   .cams { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
   .cams .n { color: var(--text); font-weight: 700; }
+  .camlist { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 5px; }
+  .camitem { color: var(--dim); white-space: nowrap; }
+  .ping { font-weight: 700; }
+  .ping.good { color: var(--tally-pvw); }
+  .ping.mid { color: #E7B252; }
+  .ping.bad { color: var(--tally-pgm); }
+  .ping.na { color: var(--dim); font-weight: 400; }
   .st { font-family: var(--mono); font-size: 12.5px; display: flex; gap: 10px; }
   .pgm { color: var(--tally-pgm); font-weight: 700; }
   .pvw { color: var(--tally-pvw); font-weight: 700; }
@@ -73,31 +80,35 @@
     totalsEl.innerHTML =
       '방 <b>' + (t.rooms||0) + '</b>' +
       ' · 호스트 <b>' + (t.hosts||0) + '</b>' +
-      ' · 카메라 <b>' + (t.cams||0) + '</b>' +
-      ' · 큐 수신 <b>' + (t.cue_recv||0) + '</b>';
+      ' · 카메라 <b>' + (t.cams||0) + '</b>';
     var rooms = d.rooms || [];
     if (!rooms.length){ body.innerHTML = '<div class="msg">접속 중인 방이 없습니다.</div>'; return; }
     var rows = rooms.map(function(r){
       var host = r.host_online
         ? '<span class="host online"><span class="d"></span>온라인<span class="mode">' + esc(modeLabel(r.host_mode)) + '</span></span>'
         : '<span class="host off"><span class="d"></span><span class="off">오프라인</span></span>';
-      var camNums = (r.cams && r.cams.length) ? r.cams.join(' ') : '—';
-      var cams = '<span class="n">' + (r.cam_count||0) + '</span>대' +
-                 (r.cams && r.cams.length ? ' <span style="color:var(--dim)">#' + esc(camNums) + '</span>' : '');
+      var camNums = (r.cams && r.cams.length) ? r.cams.map(function(c){ return '#' + c; }).join(' ') : '—';
+      var cams = '<span class="n">' + (r.cam_count||0) + '</span>대 <span style="color:var(--dim)">' + esc(camNums) + '</span>';
+      var rtt = r.rtt || {};
+      var pingChips = (r.cams || []).map(function(c){
+        var ms = rtt[String(c)];
+        var ping = (ms == null)
+          ? '<span class="ping na">–</span>'
+          : '<span class="ping ' + (ms < 80 ? 'good' : (ms < 200 ? 'mid' : 'bad')) + '">' + ms + 'ms</span>';
+        return '<span class="camitem">#' + c + ' ' + ping + '</span>';
+      }).join('');
+      var pingCell = pingChips ? '<div class="camlist">' + pingChips + '</div>' : '<span class="off">—</span>';
       var pgm = (r.pgm && r.pgm.length) ? r.pgm.join(',') : '—';
       var pvw = (r.pvw && r.pvw.length) ? r.pvw.join(',') : '—';
       var st = '<span><span class="lbl">PGM</span> <span class="pgm">' + esc(pgm) + '</span></span>' +
                '<span><span class="lbl">PVW</span> <span class="pvw">' + esc(pvw) + '</span></span>';
-      var cue = r.cue_recv || r.cue_op
-        ? ((r.cue_op ? '<span class="op">OP</span> ' : '') + '수신 ' + (r.cue_recv||0))
-        : '<span class="off">—</span>';
       return '<tr><td class="room">' + esc(r.room) + '</td>' +
              '<td>' + host + '</td>' +
              '<td class="cams">' + cams + '</td>' +
              '<td class="st">' + st + '</td>' +
-             '<td class="cue">' + cue + '</td></tr>';
+             '<td class="cams">' + pingCell + '</td></tr>';
     }).join('');
-    body.innerHTML = '<table><thead><tr><th>방</th><th>호스트</th><th>카메라</th><th>탈리(PGM/PVW)</th><th>큐</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    body.innerHTML = '<table><thead><tr><th>방</th><th>호스트</th><th>카메라</th><th>탈리(PGM/PVW)</th><th>핑(ms)</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   function setLive(ok, txt){ dot.className = 'dot ' + (ok ? 'on' : 'off'); livetxt.textContent = txt; }

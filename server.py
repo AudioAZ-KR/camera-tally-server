@@ -121,7 +121,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "ftr1_76a826e26947a139dd1ef8bc01b6ca34")   # 새 서버 세대 키. 이 키를 실은 빌드만 온라인 브릿지 허용 → 과거 배포판 전부 차단(2026-09-06). 바꾸려면 이 값과 host_app.RELAY_KEY를 같이 교체.
-SERVER_VER = "2026-09-06.3"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-06.4"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -628,6 +628,7 @@ def _status_rooms():
             "cam_count": len(cams.get(rm, {})),
             "cue_op": bool(cue_ops.get(rm)),
             "cue_recv": len(cue_recv.get(rm, {})),
+            "rtt": roster_rtt(rm),
             "pgm": pgm, "pvw": pvw,
         })
     return out
