@@ -59,7 +59,7 @@ def register(room: str, cam: int, token: str, device: str = ""):
 def _unregister_token(token: str):
     for d in _tokens.values():
         d.pop(token, None)
-    for m in (_last, _env_of, _active, _alerts, _lang, _push_tok, _banner, _keep, _sleeping):
+    for m in (_last, _env_of, _active, _alerts, _lang, _push_tok, _banner, _keep, _sleeping, _vib):
         m.pop(token, None)
     dev = _token_device.pop(token, None)
     if dev and _device_token.get(dev) == token:
