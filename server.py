@@ -116,7 +116,7 @@ async def demo_close(ws, room):
     except Exception: pass
     try: await ws.close()
     except Exception: pass
-SERVER_VER = "2026-09-05.3"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-05.4"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -424,6 +424,7 @@ async def ws_handler(request):
             #                    연결 리셋/EOF = 앱이 스와이프로 죽음 → 5초 유예 후 아일랜드 종료 (정상 close=나가기는 앱이 직접 종료)
             exc = ws.exception()
             killed = ws.close_code != 1000 and not isinstance(exc, asyncio.TimeoutError) and not apns_live.treat_close_as_sleep(tok)
+            if room == "DEMO": killed = True                  # 데모 방: 어떻게 끊기든 아일랜드 종료 (앱을 껐는데 데모가 계속 순환하며 "실행 중"처럼 보이던 문제, 2026-09-05)
             if killed: apns_live.schedule_end(apns_live.device_of(tok))
             else: apns_live.mark_sleep(tok, False)
         if room:
@@ -481,8 +482,9 @@ async def reaper(app):
             for w in stale:
                 d.pop(w, None); rooms.get(room, set()).discard(w); seen.pop(w, None); ws_rtt.pop(w, None)
                 tok = ios_token.pop(w, None)
-                if tok and token_ws.get(tok) is w:       # 서버가 끊는 무응답 = 잠든 폰 → 아일랜드 유지
+                if tok and token_ws.get(tok) is w:       # 서버가 끊는 무응답 = 잠든 폰 → 아일랜드 유지 (데모 방은 종료)
                     token_ws.pop(tok, None); apns_live.set_active(tok, False)
+                    if room == "DEMO": apns_live.schedule_end(apns_live.device_of(tok))
                 try: await w.close()
                 except Exception: pass
             if stale:
