@@ -210,9 +210,14 @@ function showRoom(code) {
   $('code').textContent = code; curCode = code; renderCams();
   history.replaceState(null, '', '?room=' + code);
 }
+// 방 코드 첫 글자 = 지역(S/E/U/A). 폰·호스트가 같은 지역 서버로 붙는 근거라 웹에서 만들 때도 맞춰야 한다 (2026-09-07)
+const REGION_LETTER = { 'camera-tally.onrender.com':'S', 'camera-tally-eu.onrender.com':'E',
+                        'camera-tally-us.onrender.com':'U', 'camera-tally-use.onrender.com':'A' };
 $('create').onclick = () => {
-  const c = Array.from({length: 6}, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*32)]).join('');
-  showRoom(c);
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';                 // O·0·I·1 제외 (호스트 gen_code 와 동일)
+  const pre = REGION_LETTER[location.hostname] || '';           // 지역 서버가 아니면(내장 서버 등) 접두어 없이
+  const rest = Array.from({length: pre ? 5 : 6}, () => A[Math.floor(Math.random()*A.length)]).join('');
+  showRoom(pre + rest);
 };
 $('join').onclick = () => {
   const r = $('joinRoom').value.trim().toUpperCase(), c = $('joinCam').value;
