@@ -42,6 +42,13 @@ ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
 STALE_SEC = 100        # 이 시간 안에 갱신이 없으면 아일랜드가 "접속 끊김"(노랑)으로 — 폰이 푸시를 못 받으면 자동 전환
 KEEPALIVE_SEC = 55     # 백그라운드 폰의 stale-date를 주기적으로 늘려줌 (STALE_SEC보다 짧게 → 살아있는 방은 노랑 안 뜸)
 _ka_task = None        # keepalive 루프 (첫 등록 때 1회 기동)
+_state_provider = None # room -> 현재 탈리 상태(dict). server.py가 주입 (keepalive 첫 회 _last 없을 때 대비)
+
+
+def set_state_provider(fn):
+    """server.py가 방별 현재 상태를 돌려주는 함수를 등록 → keepalive가 조용한 방도 정확히 갱신."""
+    global _state_provider
+    _state_provider = fn
 
 # room -> {token: cam}
 _tokens: dict[str, dict[str, int]] = {}
@@ -78,6 +85,13 @@ async def _keepalive_loop():
                     if dev and dev in _end_tasks:
                         continue                       # 종료 예약(나감·강제종료) → 갱신 안 함
                     cs = _last.get(token)
+                    if not cs and _state_provider is not None:
+                        try:
+                            st = _state_provider(room)
+                        except Exception:
+                            st = None
+                        if st:
+                            cs = content_state(cam, st, None, None); _last[token] = cs
                     if not cs:
                         continue
                     aps = {"timestamp": now, "event": "update", "content-state": cs,

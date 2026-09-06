@@ -121,12 +121,13 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-06.11"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-06.12"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
 timers: dict[str, dict] = {}   # room -> {"running","end","remain","target"} (카운트다운 + 목표 시각, 서버 시각 기준 ms)
 OFFLINE = {"program": 0, "preview": 0, "pgm": [], "pvw": [], "online": False}
+apns_live.set_state_provider(lambda room: state.get(room))   # keepalive가 조용한 방도 현재 상태로 갱신
 
 def now_ms(): return int(time.time() * 1000)
 
