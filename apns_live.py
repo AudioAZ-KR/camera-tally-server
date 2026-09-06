@@ -39,12 +39,55 @@ _vib: dict[str, bool] = {}          # LA token -> 알림에 진동·소리를 �
 _keep: dict[str, bool] = {}         # LA token -> '잠금 유지': 소켓이 어떻게 끊겨도 종료로 보지 않음 (나가기·호스트 종료·410만 종료)
 _sleeping: dict[str, bool] = {}     # LA token -> 앱이 "잠들 예정"을 알림 (뒤로 간 뒤 몇 초) → 이후 끊김은 잠듦       # LA token -> 배너 모드(앱 '배너' 스위치): 가로 화면에선 아일랜드가 안 그려지므로 일반 알림 배너로   # deviceId -> 유예 후 활동 종료 작업 (앱 종료·소켓 끊김 대비)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
+STALE_SEC = 100        # 이 시간 안에 갱신이 없으면 아일랜드가 "접속 끊김"(노랑)으로 — 폰이 푸시를 못 받으면 자동 전환
+KEEPALIVE_SEC = 55     # 백그라운드 폰의 stale-date를 주기적으로 늘려줌 (STALE_SEC보다 짧게 → 살아있는 방은 노랑 안 뜸)
+_ka_task = None        # keepalive 루프 (첫 등록 때 1회 기동)
 
 # room -> {token: cam}
 _tokens: dict[str, dict[str, int]] = {}
 _last: dict[str, dict] = {}          # token -> 마지막으로 보낸 content-state (같으면 안 보냄: iOS 갱신 예산 절약 = 지연 감소)
 _jwt_cache = {"token": "", "ts": 0.0}
 _client = None
+
+
+def ensure_keepalive():
+    """이벤트 루프가 도는 동안 keepalive 루프를 1회 기동 (폰이 처음 등록될 때 호출)."""
+    global _ka_task
+    if _ka_task is not None:
+        return
+    try:
+        _ka_task = asyncio.ensure_future(_keepalive_loop())
+    except RuntimeError:
+        _ka_task = None                     # 아직 루프 없음 → 다음 등록 때 다시 시도
+
+
+async def _keepalive_loop():
+    """백그라운드 폰의 아일랜드가 살아있는 동안은 stale-date를 주기적으로 늘려 노랑으로 안 뜨게 한다.
+    호스트/폰이 끊겨 이 갱신이 폰에 닿지 못하면 STALE_SEC 뒤 아일랜드가 스스로 "접속 끊김"(노랑)이 된다."""
+    while True:
+        try:
+            await asyncio.sleep(KEEPALIVE_SEC)
+            if not ENABLED:
+                continue
+            now = int(time.time())
+            for room, regs in list(_tokens.items()):
+                for token, cam in list(regs.items()):
+                    if _active.get(token):
+                        continue                       # 앱이 앞에 떠 있음 → 소켓·앱이 직접 갱신
+                    dev = _token_device.get(token)
+                    if dev and dev in _end_tasks:
+                        continue                       # 종료 예약(나감·강제종료) → 갱신 안 함
+                    cs = _last.get(token)
+                    if not cs:
+                        continue
+                    aps = {"timestamp": now, "event": "update", "content-state": cs,
+                           "stale-date": now + STALE_SEC,
+                           "relevance-score": 100 if cs.get("state") == "pgm" else 50}
+                    asyncio.ensure_future(_send(token, {"aps": aps}))
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            print(f"[apns] keepalive error: {e!r}", flush=True)
 
 
 def register(room: str, cam: int, token: str, device: str = ""):
@@ -55,6 +98,7 @@ def register(room: str, cam: int, token: str, device: str = ""):
             _unregister_token(old)                 # 같은 기기의 이전(좀비) 토큰 제거
         _device_token[device] = token; _token_device[token] = device
     _tokens.setdefault(room, {})[token] = int(cam)
+    ensure_keepalive()
 
 
 def _unregister_token(token: str):
@@ -215,6 +259,7 @@ def content_state(cam: int, st: dict, note: dict | None, timer: dict | None) -> 
     t = timer or {}
     return {
         "state": cam_state(cam, st),
+        "connected": True,
         "pgm": [int(x) for x in (st.get("pgm") or [])][:8],
         "pvw": [int(x) for x in (st.get("pvw") or [])][:8],
         "notice": (note or {}).get("text", "")[:120],
@@ -304,7 +349,7 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
         _last[token] = cs
         if _active.get(token):
             continue                                   # 앱이 앞에 있음: 소켓으로 즉시 갱신·앱 햅틱 → 푸시(알림 진동) 생략
-        aps = {"timestamp": now, "event": "update", "content-state": cs, "relevance-score": 100 if cs["state"] == "pgm" else 50}
+        aps = {"timestamp": now, "event": "update", "content-state": cs, "stale-date": now + STALE_SEC, "relevance-score": 100 if cs["state"] == "pgm" else 50}
         ps = (prev or {}).get("state")
         do_alert = alert_onair and _alerts.get(token, True)     # 이 폰의 알림 스위치 (루프 지역 변수 — 다른 폰에 영향 없음)
         m = _MSG.get(_lang.get(token, "ko"), _MSG["ko"])
