@@ -128,7 +128,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-06.15"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-07.1"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -150,7 +150,8 @@ def timer_msg(room):
                        "target": t["target"], "now": now_ms()})
 
 def tally_msg(room):
-    return json.dumps({"type": "tally", **state.get(room, OFFLINE)})
+    # host: 호스트(브릿지)가 붙어 있나 — 웹/폰이 'ATEM 오프라인'과 '호스트 오프라인'을 구분해 표시 (2026-09-07)
+    return json.dumps({"type": "tally", **state.get(room, OFFLINE), "host": bool(bridges.get(room))})
 
 # ===== 큐 라이트 =====
 cue_clients: dict[str, set] = {}   # room -> set(ws)  (수신 폰 + 오퍼레이터: cue_state 브로드캐스트 대상)
