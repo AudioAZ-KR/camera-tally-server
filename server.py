@@ -121,7 +121,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-06.8"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-06.9"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -423,6 +423,7 @@ async def ws_handler(request):
                     if "banner" in data: apns_live.set_banner(tok, bool(data.get("banner")))
                     if "keep" in data: apns_live.set_keep(tok, bool(data.get("keep")))
                     if "vib" in data: apns_live.set_vib(tok, bool(data.get("vib")))
+                    if data.get("apns_env"): apns_live.set_env(tok, str(data.get("apns_env")))
                     apns_live.mark_sleep(tok, bool(data.get("suspend")))     # 잠들 예정 알림 / 다시 활성이면 해제
                     apns_live.cancel_end(apns_live.device_of(tok))            # 앱이 살아있음 → 예약된 종료 취소
             elif t == "rtt" and room:                # 폰이 잰 서버 왕복 지연(ms) 보고 → 호스트에 전달
@@ -693,6 +694,7 @@ async def _ios_activity(request, d, token, device):
     if "vib" in d: apns_live.set_vib(token, bool(d.get("vib")))
     if "active" in d: apns_live.set_active(token, bool(d.get("active")), d.get("alerts"))   # 오프라인(LAN) 모드 폰이 클라우드엔 HTTP로만 전면/후면을 알림 (소켓은 LAN 서버에)
     if "suspend" in d: apns_live.mark_sleep(token, bool(d.get("suspend")))
+    if d.get("apns_env"): apns_live.set_env(token, str(d.get("apns_env")))
     apns_live.set_lang(token, d.get("lang"))
     print(f"[ios   ] activity {room} cam={cam} ({apns_live.count(room)} phones)", flush=True)
     # 등록 직후 현재 상태를 한 번 보내 아일랜드가 바로 맞춰지게

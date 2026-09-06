@@ -143,6 +143,11 @@ def treat_close_as_sleep(token: str) -> bool:
     return bool(_keep.get(token) or _sleeping.get(token))
 
 
+def set_env(token: str, env):
+    """앱이 알려준 이 빌드의 APNs 환경을 초기값으로 (틀리면 _send가 자동 보정). sandbox|production 만."""
+    if token and env in HOSTS and token not in _env_of: _env_of[token] = env
+
+
 def set_vib(token: str, on: bool):
     if token: _vib[token] = bool(on)
 
