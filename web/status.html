@@ -44,6 +44,18 @@
   .ping.mid { color: #E7B252; }
   .ping.bad { color: var(--tally-pgm); }
   .ping.na { color: var(--dim); font-weight: 400; }
+.region { margin-top: 16px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 4px; }
+.region .rh { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.region .rh h2 { font-size: 14px; font-weight: 700; letter-spacing: -.01em; display: inline-flex; align-items: center; gap: 8px; }
+.region .rh .code { font-family: var(--mono); font-size: 11px; color: var(--dim); border: 1px solid var(--border); padding: 1px 6px; }
+.region .rh .stat { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.region .rh .stat b { color: var(--text); font-weight: 700; }
+.region .rh .avg { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: auto; }
+.region .rh .avg b { color: var(--tally-pvw); font-weight: 700; }
+.region .rh .avg.mid b { color: #E7B252; } .region .rh .avg.bad b { color: var(--tally-pgm); } .region .rh .avg.na b { color: var(--dim); }
+.region .msg { padding: 18px 8px; }
+.region .url { font-family: var(--mono); font-size: 11px; color: var(--dim); padding: 8px 0 4px; }
+@media (max-width: 560px) { .region .rh .avg { margin-left: 0; } }
   .st { font-family: var(--mono); font-size: 12.5px; display: flex; gap: 10px; }
   .pgm { color: var(--tally-pgm); font-weight: 700; }
   .pvw { color: var(--tally-pvw); font-weight: 700; }
@@ -63,7 +75,7 @@
   </header>
   <div class="totals" id="totals"></div>
   <div id="body"><div class="msg">불러오는 중…</div></div>
-  <div class="foot">3초마다 자동 갱신 · Flare Tally 서버</div>
+  <div class="foot">3초마다 자동 갱신 · 지역 서버 4곳(싱가폴·프랑크푸르트·오레곤·오하이오) · 평균 핑 = 접속 폰이 보고한 서버 왕복 지연 평균 · Flare Tally 서버</div>
 </div>
 <script>
   var KEY = new URLSearchParams(location.search).get('key') || '';
@@ -74,15 +86,8 @@
 
   function modeLabel(m){ return m === 'licensed' ? '라이선스' : (m === 'demo' ? '데모' : ''); }
 
-  function render(d){
-    verEl.textContent = d.ver ? ('서버 ' + d.ver) : '';
-    var t = d.totals || {};
-    totalsEl.innerHTML =
-      '방 <b>' + (t.rooms||0) + '</b>' +
-      ' · 호스트 <b>' + (t.hosts||0) + '</b>' +
-      ' · 카메라 <b>' + (t.cams||0) + '</b>';
-    var rooms = d.rooms || [];
-    if (!rooms.length){ body.innerHTML = '<div class="msg">접속 중인 방이 없습니다.</div>'; return; }
+  function roomsTable(rooms){
+    if (!rooms || !rooms.length) return '<div class="msg">접속 중인 방이 없습니다.</div>';
     var rows = rooms.map(function(r){
       var host = r.host_online
         ? '<span class="host online"><span class="d"></span>온라인<span class="mode">' + esc(modeLabel(r.host_mode)) + '</span></span>'
@@ -108,7 +113,30 @@
              '<td class="st">' + st + '</td>' +
              '<td class="cams">' + pingCell + '</td></tr>';
     }).join('');
-    body.innerHTML = '<table><thead><tr><th>방</th><th>호스트</th><th>카메라</th><th>탈리(PGM/PVW)</th><th>핑(ms)</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<table><thead><tr><th>방</th><th>호스트</th><th>카메라</th><th>탈리(PGM/PVW)</th><th>핑(ms)</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  function regionErr(e){ return e==='old_version' ? '현황 미지원 — 이 지역 서버가 아직 새 버전으로 배포되지 않았습니다' : e==='timeout' ? '응답 없음 — 절전 중일 수 있습니다(첫 접속 ~50초)' : e==='unreachable' ? '연결 실패' : ('오류 ' + (e||'')); }
+  function renderAll(d){
+    verEl.textContent = d.ver ? ('서버 ' + d.ver) : '';
+    var regs = d.regions || [], T={rooms:0,hosts:0,cams:0}, up=0;
+    regs.forEach(function(r){ if(r.ok){ up++; var t=r.totals||{}; T.rooms+=t.rooms||0; T.hosts+=t.hosts||0; T.cams+=t.cams||0; } });
+    totalsEl.innerHTML = '지역 <b>' + up + '/' + regs.length + '</b> · 방 <b>' + T.rooms + '</b> · 호스트 <b>' + T.hosts + '</b> · 카메라 <b>' + T.cams + '</b>';
+    body.innerHTML = regs.map(function(r){
+      var t=r.totals||{}; var host=(r.http||'').replace(/^https?:\/\//,'');
+      var a=r.avg_rtt, cls=(a==null?'na':(a<200?'':(a<500?'mid':'bad')));
+      var avg = r.ok ? '<span class="avg '+cls+'">평균 핑 <b>'+(a==null?'—':a+' ms')+'</b>'+(a==null?' (접속 폰 없음)':' · 폰 '+(r.rtt_n||0)+'대')+(r.L===d.self?'':' · 서버 응답 '+(r.resp_ms||0)+' ms')+'</span>' : '<span class="avg na">평균 핑 <b>—</b></span>';
+      var head = '<div class="rh"><h2><span class="dot '+(r.ok?'on':'off')+'"></span>'+esc(r.city||r.name)+' <span class="code">'+esc(r.L||'?')+' · '+esc(r.name||'')+'</span></h2>'
+        + (r.ok ? '<span class="stat">방 <b>'+(t.rooms||0)+'</b> · 호스트 <b>'+(t.hosts||0)+'</b> · 카메라 <b>'+(t.cams||0)+'</b>'+(r.ver?' · '+esc(r.ver):'')+(r.L===d.self?' · <b>이 서버</b>':'')+'</span>' : '<span class="stat">오프라인</span>')
+        + avg + '</div>';
+      return '<section class="region">'+head+(r.ok ? roomsTable(r.rooms) : '<div class="msg">'+regionErr(r.error)+'</div>')+'<div class="url">'+esc(host)+'</div></section>';
+    }).join('');
+  }
+  function render(d){
+    if (d.regions) return renderAll(d);
+    verEl.textContent = d.ver ? ('서버 ' + d.ver) : '';
+    var t = d.totals || {};
+    totalsEl.innerHTML = '방 <b>' + (t.rooms||0) + '</b> · 호스트 <b>' + (t.hosts||0) + '</b> · 카메라 <b>' + (t.cams||0) + '</b>';
+    body.innerHTML = roomsTable(d.rooms || []);
   }
 
   function setLive(ok, txt){ dot.className = 'dot ' + (ok ? 'on' : 'off'); livetxt.textContent = txt; }
@@ -116,7 +144,7 @@
   async function tick(){
     if (!KEY){ setLive(false, '키 없음'); body.innerHTML = '<div class="msg">주소에 ?key=… 가 필요합니다.</div>'; return; }
     try {
-      var r = await fetch('/status?key=' + encodeURIComponent(KEY) + '&t=' + Date.now(), { cache: 'no-store' });
+      var r = await fetch('/status?key=' + encodeURIComponent(KEY) + '&all=1&t=' + Date.now(), { cache: 'no-store' });
       if (r.status === 401){ setLive(false, '키 오류'); body.innerHTML = '<div class="msg">접근 키가 올바르지 않습니다.</div>'; return; }
       if (r.status === 503){ setLive(false, '비활성'); body.innerHTML = '<div class="msg">현황이 아직 켜지지 않았습니다.<br>(서버 환경변수 STATUS_KEY 설정 필요)</div>'; return; }
       var d = await r.json();

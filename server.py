@@ -31,6 +31,13 @@ token_ws: dict = {}            # token -> 이 토큰을 마지막으로 보고�
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://lkbbenyvchddsjsihofv.supabase.co")
 SUPABASE_ANON = os.environ.get("SUPABASE_ANON", "sb_publishable_sMTkTGD-1CktZQqirrjk6Q_0mxgpRG_")   # 공개(publishable) 키
 STATUS_KEY = os.environ.get("STATUS_KEY", "")   # 접속자 현황(/status·/status.html) 접근 키. 미설정이면 현황 비활성(503)
+# 지역 서버 목록 (호스트 앱 REGIONS와 동일) — /status?all=1 이 다른 지역 현황을 모아 보여줄 때 사용 (2026-09-06 ①, 사장님 지시)
+STATUS_REGIONS = [
+    {"L": "S", "name": "Singapore", "city": "싱가폴",     "http": os.environ.get("TALLY_HTTP_S", "https://camera-tally.onrender.com")},
+    {"L": "E", "name": "Europe",    "city": "프랑크푸르트", "http": os.environ.get("TALLY_HTTP_E", "https://camera-tally-eu.onrender.com")},
+    {"L": "U", "name": "US West",   "city": "오레곤",     "http": os.environ.get("TALLY_HTTP_U", "https://camera-tally-us.onrender.com")},
+    {"L": "A", "name": "US East",   "city": "오하이오",   "http": os.environ.get("TALLY_HTTP_A", "https://camera-tally-use.onrender.com")},
+]
 DEMO_DAYS = float(os.environ.get("DEMO_DAYS", "7"))
 demo_first: dict = {}          # device -> 데모 최초 확인 epoch (메모리; 재배포 시 초기화 — 앱이 보내는 started가 1차 근거)
 demo_last_seen: dict = {}      # device -> 데모 브릿지가 마지막으로 접속해 있던 epoch (실행 중 만료 유예용)
@@ -121,7 +128,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-06.13"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-06.14"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -651,20 +658,67 @@ def _status_rooms():
         })
     return out
 
-async def status(request):
-    """GET /status?key=KEY → 접속자 현황 JSON. STATUS_KEY 미설정이면 비활성(503)."""
-    if not STATUS_KEY:
-        return web.json_response({"ok": False, "error": "disabled",
-                                  "hint": "Render 환경변수 STATUS_KEY 를 설정하면 켜집니다."}, status=503)
-    if request.query.get("key", "") != STATUS_KEY:
-        return web.json_response({"ok": False, "error": "auth"}, status=401)
+def _avg_rtt(rl):
+    """방 목록의 폰 보고 왕복 지연(ms) 평균과 표본 수"""
+    vals = [v for r in rl for v in (r.get("rtt") or {}).values() if isinstance(v, (int, float)) and v > 0]
+    return (round(sum(vals) / len(vals)), len(vals)) if vals else (None, 0)
+
+def _status_payload():
     rl = _status_rooms()
+    avg, n = _avg_rtt(rl)
     totals = {"rooms": len(rl),
               "hosts": sum(1 for r in rl if r["host_online"]),
               "cams": sum(r["cam_count"] for r in rl),
               "cue_recv": sum(r["cue_recv"] for r in rl)}
-    return web.json_response({"ok": True, "ver": SERVER_VER, "now": now_ms(),
-                              "totals": totals, "rooms": rl})
+    return {"ok": True, "ver": SERVER_VER, "now": now_ms(), "totals": totals, "rooms": rl, "avg_rtt": avg, "rtt_n": n}
+
+def _self_region(request):
+    host = (request.host or "").split(":")[0].lower()
+    for r in STATUS_REGIONS:
+        if r["http"].split("//", 1)[-1].rstrip("/").lower() == host: return r
+    return None
+
+async def _fetch_region(session, r):
+    """다른 지역 서버의 /status 를 서버 간 인증(X-Relay-Key)으로 조회. 절전 중이면 콜드스타트라 시간이 걸릴 수 있음."""
+    import aiohttp
+    base = {"L": r["L"], "name": r["name"], "city": r["city"], "http": r["http"]}
+    t0 = time.time()
+    try:
+        async with session.get(r["http"].rstrip("/") + "/status", headers={"X-Relay-Key": RELAY_KEY},
+                               timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            ms = int((time.time() - t0) * 1000)
+            if resp.status == 200:
+                d = await resp.json(); d.update(base); d["resp_ms"] = ms; return d
+            return dict(base, ok=False, resp_ms=ms, error=("old_version" if resp.status in (401, 503) else f"http_{resp.status}"))
+    except asyncio.TimeoutError:
+        return dict(base, ok=False, resp_ms=int((time.time() - t0) * 1000), error="timeout")
+    except Exception:
+        return dict(base, ok=False, resp_ms=int((time.time() - t0) * 1000), error="unreachable")
+
+async def status(request):
+    """GET /status?key=KEY → 접속자 현황 JSON. STATUS_KEY 미설정이면 비활성(503).
+    서버 간 조회는 X-Relay-Key 헤더(RELAY_KEY)로 인증. ?all=1 이면 모든 지역 서버 현황을 모아 돌려준다."""
+    relay_ok = bool(RELAY_KEY) and request.headers.get("X-Relay-Key", "") == RELAY_KEY
+    if not relay_ok:
+        if not STATUS_KEY:
+            return web.json_response({"ok": False, "error": "disabled",
+                                      "hint": "Render 환경변수 STATUS_KEY 를 설정하면 켜집니다."}, status=503)
+        if request.query.get("key", "") != STATUS_KEY:
+            return web.json_response({"ok": False, "error": "auth"}, status=401)
+    me = _status_payload()
+    if request.query.get("all") != "1":
+        return web.json_response(me)
+    import aiohttp
+    self_r = _self_region(request)
+    me.update({"L": self_r["L"] if self_r else "?", "name": self_r["name"] if self_r else "이 서버",
+               "city": self_r["city"] if self_r else "", "http": self_r["http"] if self_r else "", "resp_ms": 0})
+    others = [r for r in STATUS_REGIONS if not self_r or r["L"] != self_r["L"]]
+    async with aiohttp.ClientSession() as session:
+        res = await asyncio.gather(*[_fetch_region(session, r) for r in others])
+    regions = [me] + list(res)
+    order = {r["L"]: i for i, r in enumerate(STATUS_REGIONS)}
+    regions.sort(key=lambda x: order.get(x.get("L"), 99))
+    return web.json_response({"ok": True, "all": True, "self": me.get("L"), "ver": SERVER_VER, "now": now_ms(), "regions": regions})
 
 async def ios_activity(request):
     """아이폰 앱이 Live Activity 푸시 토큰을 등록/해제. POST {room, cam, token} / DELETE {token}"""
