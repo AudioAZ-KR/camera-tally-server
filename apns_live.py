@@ -171,6 +171,20 @@ def end_room(room: str, delay: float = 0.7):
         if dev: schedule_end(dev, delay)
 
 
+def bg_cams(room: str) -> set:
+    """이 방에서 백그라운드로 잠든(소켓 끊김·active=False) 폰의 카메라 번호 — 종료 예약된(강제종료) 건 제외.
+    호스트가 '접속 해제'가 아니라 '잠자는 중(푸시로 수신)'으로 보여주도록."""
+    room = (room or "").strip().upper() or "DEFAULT"
+    out = set()
+    for tok, cam in _tokens.get(room, {}).items():
+        if not cam: continue
+        dev = _token_device.get(tok)
+        if dev and dev in _end_tasks: continue          # 종료 예약됨 = 강제종료/나감 → 제외
+        if _active.get(tok, True) is False:              # 앱이 백그라운드로 감(active=False)
+            out.add(int(cam))
+    return out
+
+
 def count(room: str) -> int:
     return len(_tokens.get(room, {}))
 

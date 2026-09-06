@@ -121,7 +121,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-06.9"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-06.10"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -236,7 +236,7 @@ async def broadcast(room, msg=None):
             rooms[room].discard(ws)
 
 async def broadcast_roster(room):
-    msg = json.dumps({"type": "roster", "cams": roster(room), "rtt": roster_rtt(room)})
+    msg = json.dumps({"type": "roster", "cams": roster(room), "rtt": roster_rtt(room), "bg": sorted(apns_live.bg_cams(room))})
     for ws in list(bridges.get(room, ())):
         try:
             await ws.send_str(msg)
@@ -426,6 +426,7 @@ async def ws_handler(request):
                     if data.get("apns_env"): apns_live.set_env(tok, str(data.get("apns_env")))
                     apns_live.mark_sleep(tok, bool(data.get("suspend")))     # 잠들 예정 알림 / 다시 활성이면 해제
                     apns_live.cancel_end(apns_live.device_of(tok))            # 앱이 살아있음 → 예약된 종료 취소
+                    await broadcast_roster(room)          # 전면/후면 바뀌면 호스트 명단에 '잠자는 중' 즉시 반영
             elif t == "rtt" and room:                # 폰이 잰 서버 왕복 지연(ms) 보고 → 호스트에 전달
                 ms = _i(data.get("ms"))
                 if 0 < ms < 100000 and not is_bridge:
