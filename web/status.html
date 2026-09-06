@@ -75,7 +75,7 @@
   </header>
   <div class="totals" id="totals"></div>
   <div id="body"><div class="msg">불러오는 중…</div></div>
-  <div class="foot">3초마다 자동 갱신 · 지역 서버 4곳(싱가폴·프랑크푸르트·오레곤·오하이오) · 폰 평균 핑 = 그 지역에 붙은 폰들이 잰 서버 왕복 · 서버간 = 이 서버→그 지역 서버 응답 · 내 브라우저→서버 = 이 화면에서 15초마다 직접 측정 · Flare Tally 서버</div>
+  <div class="foot">3초마다 자동 갱신 · 지역 서버 4곳(싱가폴·프랑크푸르트·오레곤·오하이오) · 사용자 평균 핑 = 그 지역 서버에 접속한 폰들이 각자 잰 서버 왕복 지연의 평균(최소·최대 포함) · 방 표의 카메라별 핑은 개별 값 · Flare Tally 서버</div>
 </div>
 <script>
   var KEY = new URLSearchParams(location.search).get('key') || '';
@@ -115,24 +115,8 @@
     }).join('');
     return '<table><thead><tr><th>방</th><th>호스트</th><th>카메라</th><th>탈리(PGM/PVW)</th><th>핑(ms)</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
-  var MYPING = {};   // L -> ms (내 브라우저에서 각 지역 /health 왕복)
-  var myPingAt = 0;
-  async function measureMyPing(regs){
-    if (Date.now() - myPingAt < 15000) return; myPingAt = Date.now();
-    await Promise.all(regs.map(async function(r){
-      if (!r.http) return;
-      try {
-        await fetch(r.http.replace(/\/$/,'') + '/health?warm=' + Date.now(), { mode: 'no-cors', cache: 'no-store' });   // 콜드스타트 제외용 워밍
-        var t0 = performance.now();
-        await fetch(r.http.replace(/\/$/,'') + '/health?t=' + Date.now(), { mode: 'no-cors', cache: 'no-store' });
-        MYPING[r.L] = Math.round(performance.now() - t0);
-      } catch(e){ MYPING[r.L] = null; }
-    }));
-    var d = window.__lastAll; if (d) renderAll(d);
-  }
   function regionErr(e){ return e==='old_version' ? '현황 미지원 — 이 지역 서버가 아직 새 버전으로 배포되지 않았습니다' : e==='timeout' ? '응답 없음 — 절전 중일 수 있습니다(첫 접속 ~50초)' : e==='unreachable' ? '연결 실패' : ('오류 ' + (e||'')); }
   function renderAll(d){
-    window.__lastAll = d; measureMyPing(d.regions || []);
     verEl.textContent = d.ver ? ('서버 ' + d.ver) : '';
     var regs = d.regions || [], T={rooms:0,hosts:0,cams:0}, up=0;
     regs.forEach(function(r){ if(r.ok){ up++; var t=r.totals||{}; T.rooms+=t.rooms||0; T.hosts+=t.hosts||0; T.cams+=t.cams||0; } });
@@ -140,8 +124,7 @@
     body.innerHTML = regs.map(function(r){
       var t=r.totals||{}; var host=(r.http||'').replace(/^https?:\/\//,'');
       var a=r.avg_rtt, cls=(a==null?'na':(a<200?'':(a<500?'mid':'bad')));
-      var mine = MYPING[r.L]; var mineTxt = (mine==null ? '' : ' · 내 브라우저→서버 '+mine+' ms');
-      var avg = r.ok ? '<span class="avg '+cls+'">폰 평균 핑 <b>'+(a==null?'—':a+' ms')+'</b>'+(a==null?' (접속 폰 없음)':' · 폰 '+(r.rtt_n||0)+'대')+(r.L===d.self?'':' · 서버간 '+(r.resp_ms||0)+' ms')+mineTxt+'</span>' : '<span class="avg na">폰 평균 핑 <b>—</b>'+mineTxt+'</span>';
+      var avg = r.ok ? '<span class="avg '+cls+'">사용자 평균 핑 <b>'+(a==null?'—':a+' ms')+'</b>'+(a==null?' (접속 중인 폰 없음)':' · 폰 '+(r.rtt_n||0)+'대'+(r.rtt_min!=null&&r.rtt_n>1?' · 최소 '+r.rtt_min+' · 최대 '+r.rtt_max+' ms':''))+'</span>' : '<span class="avg na">사용자 평균 핑 <b>—</b></span>';
       var head = '<div class="rh"><h2><span class="dot '+(r.ok?'on':'off')+'"></span>'+esc(r.city||r.name)+' <span class="code">'+esc(r.L||'?')+' · '+esc(r.name||'')+'</span></h2>'
         + (r.ok ? '<span class="stat">방 <b>'+(t.rooms||0)+'</b> · 호스트 <b>'+(t.hosts||0)+'</b> · 카메라 <b>'+(t.cams||0)+'</b>'+(r.ver?' · '+esc(r.ver):'')+(r.L===d.self?' · <b>이 서버</b>':'')+'</span>' : '<span class="stat">오프라인</span>')
         + avg + '</div>';

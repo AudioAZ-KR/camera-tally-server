@@ -128,7 +128,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-06.14"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-06.15"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -659,18 +659,18 @@ def _status_rooms():
     return out
 
 def _avg_rtt(rl):
-    """방 목록의 폰 보고 왕복 지연(ms) 평균과 표본 수"""
+    """방 목록의 폰 보고 왕복 지연(ms): (평균, 표본 수, 최소, 최대) — 그 지역 서버에 붙은 사용자들이 실제로 겪는 핑"""
     vals = [v for r in rl for v in (r.get("rtt") or {}).values() if isinstance(v, (int, float)) and v > 0]
-    return (round(sum(vals) / len(vals)), len(vals)) if vals else (None, 0)
+    return (round(sum(vals) / len(vals)), len(vals), min(vals), max(vals)) if vals else (None, 0, None, None)
 
 def _status_payload():
     rl = _status_rooms()
-    avg, n = _avg_rtt(rl)
+    avg, n, lo, hi = _avg_rtt(rl)
     totals = {"rooms": len(rl),
               "hosts": sum(1 for r in rl if r["host_online"]),
               "cams": sum(r["cam_count"] for r in rl),
               "cue_recv": sum(r["cue_recv"] for r in rl)}
-    return {"ok": True, "ver": SERVER_VER, "now": now_ms(), "totals": totals, "rooms": rl, "avg_rtt": avg, "rtt_n": n}
+    return {"ok": True, "ver": SERVER_VER, "now": now_ms(), "totals": totals, "rooms": rl, "avg_rtt": avg, "rtt_n": n, "rtt_min": lo, "rtt_max": hi}
 
 def _self_region(request):
     host = (request.host or "").split(":")[0].lower()
