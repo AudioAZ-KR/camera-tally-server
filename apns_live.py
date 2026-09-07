@@ -369,8 +369,16 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
         do_alert = alert_onair and _alerts.get(token, True)     # 이 폰의 알림 스위치 (루프 지역 변수 — 다른 폰에 영향 없음)
         m = _MSG.get(_lang.get(token, "ko"), _MSG["ko"])
         def alert(kind):
-            t, b = m[kind]; a = {"title": t.format(cam=cam), "body": b}
-            if _vib.get(token, True): a["sound"] = "default"      # 알림 진동 OFF면 조용히
+            # APNs 규격: sound·interruption-level 은 aps 바로 아래여야 한다. 예전엔 alert 안에 sound 를 넣어
+            # iOS가 통째로 무시했고, 그래서 '알림 진동 끔'이 전혀 먹지 않았다 (사장님 2026-09-07 "진동 껐는데 울려")
+            t, b = m[kind]
+            a = {"title": t.format(cam=cam), "body": b}
+            if _vib.get(token, True):
+                aps["sound"] = "default"
+                aps.pop("interruption-level", None)
+            else:
+                aps.pop("sound", None)
+                aps["interruption-level"] = "passive"             # 조용히 전달: 진동·화면 깨움 없음
             return a
         kind = "pgm" if (cs["state"] == "pgm" and ps != "pgm") else "idle" if (cs["state"] == "idle" and ps == "pgm") else "pvw" if (cs["state"] == "pvw" and ps not in ("pvw", "pgm")) else None
         if alert_onair and kind and _banner.get(token) and _push_tok.get(token):
