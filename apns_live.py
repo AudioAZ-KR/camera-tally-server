@@ -366,22 +366,16 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
             continue                                   # 앱이 앞에 있음: 소켓으로 즉시 갱신·앱 햅틱 → 푸시(알림 진동) 생략
         aps = {"timestamp": now, "event": "update", "content-state": cs, "stale-date": now + STALE_SEC, "relevance-score": 100 if cs["state"] == "pgm" else 50}
         ps = (prev or {}).get("state")
-        do_alert = alert_onair and _alerts.get(token, True)     # 이 폰의 알림 스위치 (루프 지역 변수 — 다른 폰에 영향 없음)
+        # 알림 진동을 끄면 alert 를 아예 붙이지 않는다 — Live Activity 업데이트에 alert 가 있으면
+        # 소리를 빼도 iOS가 배너+햅틱을 울려서 "진동만 끄기"가 불가능하다 (사장님 2026-09-07)
+        do_alert = alert_onair and _alerts.get(token, True) and _vib.get(token, True)
         m = _MSG.get(_lang.get(token, "ko"), _MSG["ko"])
         def alert(kind):
-            # APNs 규격: sound·interruption-level 은 aps 바로 아래여야 한다. 예전엔 alert 안에 sound 를 넣어
-            # iOS가 통째로 무시했고, 그래서 '알림 진동 끔'이 전혀 먹지 않았다 (사장님 2026-09-07 "진동 껐는데 울려")
-            t, b = m[kind]
-            a = {"title": t.format(cam=cam), "body": b}
-            if _vib.get(token, True):
-                aps["sound"] = "default"
-                aps.pop("interruption-level", None)
-            else:
-                aps.pop("sound", None)
-                aps["interruption-level"] = "passive"             # 조용히 전달: 진동·화면 깨움 없음
+            # ActivityKit 푸시는 일반 알림과 규격이 다르다: sound 는 alert 안에 넣는다.
+            t, b = m[kind]; a = {"title": t.format(cam=cam), "body": b, "sound": "default"}
             return a
         kind = "pgm" if (cs["state"] == "pgm" and ps != "pgm") else "idle" if (cs["state"] == "idle" and ps == "pgm") else "pvw" if (cs["state"] == "pvw" and ps not in ("pvw", "pgm")) else None
-        if alert_onair and kind and _banner.get(token) and _push_tok.get(token):
+        if do_alert and kind and _banner.get(token) and _push_tok.get(token):
             # 배너 모드: 일반 알림 1건(가로에서도 보임, 진동 1회) + 아일랜드는 알림 없이 갱신 (이중 진동 방지)
             t_, b_ = m[kind]
             tasks.append(_send_banner(token, _push_tok[token], t_.format(cam=cam), b_, f"tally-{cam}", kind, cam))
