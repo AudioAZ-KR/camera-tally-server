@@ -366,15 +366,23 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
             continue                                   # 앱이 앞에 있음: 소켓으로 즉시 갱신·앱 햅틱 → 푸시(알림 진동) 생략
         aps = {"timestamp": now, "event": "update", "content-state": cs, "stale-date": now + STALE_SEC, "relevance-score": 100 if cs["state"] == "pgm" else 50}
         ps = (prev or {}).get("state")
-        # 알림 진동을 끄면 alert 를 아예 붙이지 않는다 — Live Activity 업데이트에 alert 가 있으면
-        # 소리를 빼도 iOS가 배너+햅틱을 울려서 "진동만 끄기"가 불가능하다 (사장님 2026-09-07)
-        do_alert = alert_onair and _alerts.get(token, True) and _vib.get(token, True)
+        # Live Activity 업데이트에 alert 가 붙으면 소리를 빼도 iOS가 햅틱을 울린다 → 진동 끔이면 alert 를 안 붙인다.
+        # 대신 소리 없는 '일반 배너'를 따로 보내 가로 화면(NDI 촬영앱 등)에서도 보이게 한다.
+        # (아일랜드는 가로에서 최소 표시만 그려져 전환 알림이 눈에 안 띈다 — 사장님 2026-09-07)
+        alerts_on = alert_onair and _alerts.get(token, True)
+        do_alert = alerts_on and _vib.get(token, True)
         m = _MSG.get(_lang.get(token, "ko"), _MSG["ko"])
         def alert(kind):
             # ActivityKit 푸시는 일반 알림과 규격이 다르다: sound 는 alert 안에 넣는다.
             t, b = m[kind]; a = {"title": t.format(cam=cam), "body": b, "sound": "default"}
             return a
         kind = "pgm" if (cs["state"] == "pgm" and ps != "pgm") else "idle" if (cs["state"] == "idle" and ps == "pgm") else "pvw" if (cs["state"] == "pvw" and ps not in ("pvw", "pgm")) else None
+        if alerts_on and not do_alert and kind and _push_tok.get(token):
+            # 진동 끔 + 알림 켬: 소리 없는 배너 1건(진동 없음·가로에서도 보임) + 아일랜드는 조용히 갱신
+            t_, b_ = m[kind]
+            tasks.append(_send_banner(token, _push_tok[token], t_.format(cam=cam), b_, f"tally-{cam}", kind, cam))
+            tasks.append(_send(token, {"aps": aps}))
+            continue
         if do_alert and kind and _banner.get(token) and _push_tok.get(token):
             # 배너 모드: 일반 알림 1건(가로에서도 보임, 진동 1회) + 아일랜드는 알림 없이 갱신 (이중 진동 방지)
             t_, b_ = m[kind]
