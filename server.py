@@ -128,7 +128,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-07.2"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-07.3"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -454,7 +454,10 @@ async def ws_handler(request):
             #                    연결 리셋/EOF = 앱이 스와이프로 죽음 → 5초 유예 후 아일랜드 종료 (정상 close=나가기는 앱이 직접 종료)
             exc = ws.exception()
             killed = ws.close_code != 1000 and not isinstance(exc, asyncio.TimeoutError) and not apns_live.treat_close_as_sleep(tok)
-            if room == "DEMO": killed = True                  # 데모 방: 어떻게 끊기든 아일랜드 종료 (앱을 껐는데 데모가 계속 순환하며 "실행 중"처럼 보이던 문제, 2026-09-05)
+            # 데모 방은 앱을 껐을 때 아일랜드가 남지 않도록 공격적으로 종료하지만,
+            # '잠금 유지'·'잠들 예정'이면 통화·잠금으로 끊긴 것이므로 종료로 보지 않는다
+            # (2026-09-07: 통화 중 끊김을 종료로 오판해 푸시가 끊기고 아일랜드가 노랑으로 굳었음)
+            if room == "DEMO" and not apns_live.treat_close_as_sleep(tok): killed = True                  # 데모 방: 어떻게 끊기든 아일랜드 종료 (앱을 껐는데 데모가 계속 순환하며 "실행 중"처럼 보이던 문제, 2026-09-05)
             if killed: apns_live.schedule_end(apns_live.device_of(tok))
             else: apns_live.mark_sleep(tok, False)
         if room:

@@ -39,8 +39,8 @@ _vib: dict[str, bool] = {}          # LA token -> 알림에 진동·소리를 �
 _keep: dict[str, bool] = {}         # LA token -> '잠금 유지': 소켓이 어떻게 끊겨도 종료로 보지 않음 (나가기·호스트 종료·410만 종료)
 _sleeping: dict[str, bool] = {}     # LA token -> 앱이 "잠들 예정"을 알림 (뒤로 간 뒤 몇 초) → 이후 끊김은 잠듦       # LA token -> 배너 모드(앱 '배너' 스위치): 가로 화면에선 아일랜드가 안 그려지므로 일반 알림 배너로   # deviceId -> 유예 후 활동 종료 작업 (앱 종료·소켓 끊김 대비)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
-STALE_SEC = 240        # 이 시간 안에 갱신이 없으면 아일랜드가 "접속 끊김"(노랑)으로.
-                       # 100초였다가 240초로 — 셀룰러+잠금에서 iOS가 푸시를 몰아 주느라 100초를 넘겨 거짓 노랑이 떴다 (2026-09-07)
+STALE_SEC = 600        # 이 시간 안에 갱신이 없으면 아일랜드가 "접속 끊김"(노랑)으로.
+                       # 100→240→600초로 (통화·집중모드에서 iOS가 푸시를 오래 미뤄 거짓 노랑이 떴다, 사장님 2026-09-07)  # 과거: — 셀룰러+잠금에서 iOS가 푸시를 몰아 주느라 100초를 넘겨 거짓 노랑이 떴다 (2026-09-07)
 KEEPALIVE_SEC = 55     # 백그라운드 폰의 stale-date를 주기적으로 늘려줌 (STALE_SEC보다 짧게 → 살아있는 방은 노랑 안 뜸)
 _ka_task = None        # keepalive 루프 (첫 등록 때 1회 기동)
 _state_provider = None # room -> 현재 탈리 상태(dict). server.py가 주입 (keepalive 첫 회 _last 없을 때 대비)
