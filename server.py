@@ -128,7 +128,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-07.7"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-10.1"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -457,8 +457,18 @@ async def ws_handler(request):
             # 데모 방은 앱을 껐을 때 아일랜드가 남지 않도록 공격적으로 종료하지만,
             # '잠금 유지'·'잠들 예정'이면 통화·잠금으로 끊긴 것이므로 종료로 보지 않는다
             # (2026-09-07: 통화 중 끊김을 종료로 오판해 푸시가 끊기고 아일랜드가 노랑으로 굳었음)
-            if room == "DEMO" and not apns_live.treat_close_as_sleep(tok): killed = True                  # 데모 방: 어떻게 끊기든 아일랜드 종료 (앱을 껐는데 데모가 계속 순환하며 "실행 중"처럼 보이던 문제, 2026-09-05)
+            probe = False
+            if room == "DEMO":
+                # 데모 방(2026-09-10): '잠금 유지'(기본 ON)를 여기서 따르면 모든 끊김이 잠듦이 되어 앱을 꺼도 아일랜드가 영영 남는다(사장님 보고).
+                #  · 아직 잠들지 않은 앱이 리셋/EOF로 끊김 = 스와이프 종료 → 바로 종료
+                #  · 하트비트 타임아웃 = 잠듦
+                #  · 잠든 뒤 리셋/EOF = 잠금·통화인지 종료인지 구분 불가 → 조용한 푸시로 앱을 깨워 물어본다 (강제 종료된 앱은 iOS가 안 깨움)
+                abrupt = ws.close_code != 1000 and not isinstance(exc, asyncio.TimeoutError)
+                if abrupt and not apns_live.is_sleeping(tok): killed = True
+                elif abrupt: killed = False; probe = True
+                else: killed = False
             if killed: apns_live.schedule_end(apns_live.device_of(tok))
+            elif probe: apns_live.schedule_liveness_check(tok, apns_live.device_of(tok))
             else: apns_live.mark_sleep(tok, False)
         if room:
             if is_cueop:
@@ -762,6 +772,21 @@ async def _ios_activity(request, d, token, device):
     asyncio.create_task(apns_live.push_room(room, state.get(room, OFFLINE), notes.get(room), timers.get(room), alert_onair=False))
     return web.json_response({"ok": True, "push": apns_live.ENABLED})
 
+async def ios_alive(request):
+    """조용한 푸시(probe)에 앱이 답함: 살아있음. POST {token, device}"""
+    try:
+        if request.content_length and request.content_length > 2048: return web.json_response({"ok": False}, status=413)
+        d = await request.json()
+        token = str(d.get("token", "")).strip().lower()[:256]; device = str(d.get("device", "")).strip()[:64]
+        if token and not _TOKEN_RE.match(token): return web.json_response({"ok": False, "error": "token"}, status=400)
+        if device and not _ID_RE.match(device): return web.json_response({"ok": False, "error": "device"}, status=400)
+        if token: apns_live.mark_alive(token)
+        apns_live.cancel_end(device or apns_live.device_of(token))
+        print(f"[ios   ] alive {device[:8]}", flush=True)
+        return web.json_response({"ok": True})
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_request"}, status=400)
+
 def make_app():
     """aiohttp Application은 이벤트 루프에 묶이므로, 내장 서버(호스트 앱)에서는 시작할 때마다 새로 만든다"""
     a = web.Application(middlewares=[_no_ai_headers])
@@ -773,6 +798,7 @@ def make_app():
     a.router.add_get("/status", status)
     a.router.add_post("/telemetry", telemetry)
     a.router.add_post("/ios/activity", ios_activity)
+    a.router.add_post("/ios/alive", ios_alive)
     a.router.add_delete("/ios/activity", ios_activity)
     a.router.add_get("/robots.txt", robots_txt)
     a.router.add_static("/", WEB_DIR, show_index=False)

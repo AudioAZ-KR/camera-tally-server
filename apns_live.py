@@ -37,7 +37,8 @@ _push_tok: dict[str, str] = {}      # LA token -> 일반 알림용 기기 토큰
 _banner: dict[str, bool] = {}
 _vib: dict[str, bool] = {}          # LA token -> 알림에 진동·소리를 붙일지 (기본 켬). 끄면 조용히 표시만 (사장님 2026-09-05)
 _keep: dict[str, bool] = {}         # LA token -> '잠금 유지': 소켓이 어떻게 끊겨도 종료로 보지 않음 (나가기·호스트 종료·410만 종료)
-_sleeping: dict[str, bool] = {}     # LA token -> 앱이 "잠들 예정"을 알림 (뒤로 간 뒤 몇 초) → 이후 끊김은 잠듦       # LA token -> 배너 모드(앱 '배너' 스위치): 가로 화면에선 아일랜드가 안 그려지므로 일반 알림 배너로   # deviceId -> 유예 후 활동 종료 작업 (앱 종료·소켓 끊김 대비)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
+_sleeping: dict[str, bool] = {}
+_alive: dict[str, float] = {}      # LA token -> 마지막 "살아있음" 응답 시각 (조용한 푸시로 물어본 뒤 앱이 답한 때)     # LA token -> 앱이 "잠들 예정"을 알림 (뒤로 간 뒤 몇 초) → 이후 끊김은 잠듦       # LA token -> 배너 모드(앱 '배너' 스위치): 가로 화면에선 아일랜드가 안 그려지므로 일반 알림 배너로   # deviceId -> 유예 후 활동 종료 작업 (앱 종료·소켓 끊김 대비)         # token -> 실제로 통한 환경. TestFlight/앱스토어=production, Xcode 직접 설치=sandbox — 둘 다 자동 처리
 ENABLED = bool(TEAM_ID and KEY_ID and _key_pem)
 STALE_SEC = 600        # 이 시간 안에 갱신이 없으면 아일랜드가 "접속 끊김"(노랑)으로.
                        # 100→240→600초로 (통화·집중모드에서 iOS가 푸시를 오래 미뤄 거짓 노랑이 떴다, 사장님 2026-09-07)  # 과거: — 셀룰러+잠금에서 iOS가 푸시를 몰아 주느라 100초를 넘겨 거짓 노랑이 떴다 (2026-09-07)
@@ -138,19 +139,14 @@ def device_of(token: str) -> str:
     return _token_device.get(token, "")
 
 
-async def _end_device(device: str, delay: float):
-    """소켓이 끊긴 뒤 delay초 안에 앱이 다시 살아나지 않으면 이 기기의 아일랜드를 강제 종료.
-    iOS는 앱을 스와이프로 완전히 꺼도 Live Activity를 남기므로, 서버가 대신 끝내준다."""
-    try:
-        await asyncio.sleep(delay)
-    except asyncio.CancelledError:
-        return
+async def _end_now(device: str, why: str = "grace expired"):
+    """이 기기의 아일랜드를 지금 강제 종료. iOS는 앱을 스와이프로 완전히 꺼도 Live Activity를 남기므로 서버가 대신 끝내준다."""
     _end_tasks.pop(device, None)
     token = _device_token.get(device)
     if not token:
         return
     cam = next((c for d in _tokens.values() for t, c in d.items() if t == token), 0)
-    print(f"[apns] grace expired → end device {device[:8]} cam={cam}", flush=True)
+    print(f"[apns] {why} → end device {device[:8]} cam={cam}", flush=True)
     if ENABLED:
         now = int(time.time())
         cs = content_state(cam, {"online": False}, None, None)
@@ -159,6 +155,15 @@ async def _end_device(device: str, delay: float):
         except Exception as e:
             print(f"[apns] end error: {e!r}", flush=True)
     _unregister_token(token)
+
+
+async def _end_device(device: str, delay: float):
+    """소켓이 끊긴 뒤 delay초 안에 앱이 다시 살아나지 않으면 종료."""
+    try:
+        await asyncio.sleep(delay)
+    except asyncio.CancelledError:
+        return
+    await _end_now(device)
 
 
 def schedule_end(device: str, delay: float = 0.7):
@@ -195,6 +200,68 @@ def set_keep(token: str, on: bool):
 
 def mark_sleep(token: str, on: bool = True):
     if token: _sleeping[token] = bool(on)
+
+
+def is_sleeping(token: str) -> bool:
+    """앱이 '잠들 예정'을 명시적으로 알렸는지 (잠금 유지 설정과 무관)"""
+    return bool(_sleeping.get(token))
+
+
+def mark_alive(token: str):
+    if token: _alive[token] = time.time()
+
+
+async def probe_liveness(la_token: str) -> bool:
+    """조용한 푸시(content-available)로 앱을 깨워 살아있는지 묻는다. 강제 종료된 앱은 iOS가 깨우지 않는다 — 그게 구분 기준.
+    일반 알림용 기기 토큰(_push_tok)이 있어야 보낼 수 있다."""
+    global _client
+    dev = _push_tok.get(la_token)
+    if not (ENABLED and dev): return False
+    import httpx
+    if _client is None:
+        _client = httpx.AsyncClient(http2=True, timeout=10)
+    headers = {"authorization": f"bearer {_jwt()}", "apns-topic": BUNDLE_ID, "apns-push-type": "background",
+               "apns-priority": "5", "apns-expiration": str(int(time.time()) + 60)}
+    payload = {"aps": {"content-available": 1}, "probe": 1}
+    first = _env_of.get(la_token) or ENV
+    for env in [first] + [e for e in HOSTS if e != first]:
+        try:
+            r = await _client.post(f"{HOSTS[env]}/3/device/{dev}", headers=headers, content=json.dumps(payload))
+        except Exception as e:
+            print(f"[apns] probe error {e!r}", flush=True); return False
+        print(f"[apns] probe {r.status_code} {env}", flush=True)
+        if r.status_code == 200: return True
+        if r.status_code == 400 and b"BadDeviceToken" in r.content: continue
+        if r.status_code == 410: _push_tok.pop(la_token, None)
+        return False
+    return False
+
+
+async def _liveness_check(token: str, device: str, window: float):
+    """잠든(또는 잠금 유지) 뒤 소켓이 끊긴 경우 — 잠금·통화인지 앱 종료인지 서버는 구분할 수 없다.
+    조용한 푸시를 두 번 보내 window초 안에 앱이 답하면(alive 또는 재접속) 살아있는 것, 아니면 종료로 보고 아일랜드를 끝낸다."""
+    t0 = time.time()
+    try:
+        sent = await probe_liveness(token)
+        if not sent:                                       # 물어볼 수단이 없으면 예전처럼 잠듦으로 둔다 (false kill 방지)
+            _end_tasks.pop(device, None); return
+        second = min(12.0, window / 3)                     # 두 번째 푸시 시점 (첫 푸시가 유실될 때 대비)
+        await asyncio.sleep(second)
+        if _alive.get(token, 0) >= t0: _end_tasks.pop(device, None); return
+        await probe_liveness(token)
+        await asyncio.sleep(max(0.5, window - second))
+    except asyncio.CancelledError:                         # 재접속·재등록 → cancel_end
+        return
+    if _alive.get(token, 0) >= t0:
+        _end_tasks.pop(device, None); return
+    await _end_now(device, why=f"no answer to probe in {int(window)}s")
+
+
+def schedule_liveness_check(token: str, device: str, window: float = 40.0):
+    """소켓 끊김(잠든 뒤) → 앱 생존 확인 작업 시작. 같은 기기의 예약된 종료는 대체된다."""
+    if not (token and device): return
+    cancel_end(device)
+    _end_tasks[device] = asyncio.create_task(_liveness_check(token, device, window))
 
 
 def treat_close_as_sleep(token: str) -> bool:
