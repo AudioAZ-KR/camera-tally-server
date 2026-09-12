@@ -36,6 +36,9 @@
   #light .status { font-size: min(5.5vh, 9vw); font-weight: 800; letter-spacing: .12em; margin-top: 4px; }
   #light .pgmpvw { position: absolute; top: calc(env(safe-area-inset-top) + 10px); left: 0; right: 0; text-align: center; font-size: 14px; opacity: .8; }
   #light .pgmpvw b { font-size: 18px; }
+  #tally.idle .pgmpvw, #tally.off .pgmpvw, #tally.mode-border .pgmpvw { opacity: 1; }
+  #tally.idle .pgmpvw .s, #tally.off .pgmpvw .s, #tally.mode-border .pgmpvw .s { color: var(--tally-pgm); }
+  #tally.idle .pgmpvw .w, #tally.off .pgmpvw .w, #tally.mode-border .pgmpvw .w { color: var(--tally-pvw); }
 
   #panel { flex: 0 0 50%; background: var(--bg); border-top: 1px solid var(--border); display: flex; flex-direction: column; padding: 12px 14px calc(env(safe-area-inset-bottom) + 10px); gap: 10px; overflow: hidden; }
   .clock { text-align: center; }
@@ -114,7 +117,7 @@
 <div id="tally" class="off">
   <div id="frame"></div>
   <div id="light">
-    <div class="pgmpvw"><span id="lblSend">송출</span> <b id="pgmNo">—</b> &nbsp;·&nbsp; <span id="lblWait">대기</span> <b id="pvwNo">—</b></div>
+    <div class="pgmpvw"><span class="w"><span id="lblWait">대기</span> <b id="pvwNo">—</b></span> &nbsp;·&nbsp; <span class="s"><span id="lblSend">송출</span> <b id="pgmNo">—</b></span></div>
     <div class="cam" id="myCam">1</div>
     <div class="status" id="status">연결 중</div>
   </div>
@@ -214,6 +217,7 @@ const t = k => I18N[lang][k];
 $('room').value = qs.get('room') || localStorage.room || '';
 $('cam').value  = qs.get('cam')  || localStorage.cam  || '';
 let ws, room, cam, wakeLock, pingTimer;
+let reDelay = 250;                 // 재접속 대기(ms) — 붙으면 250으로 되돌리고, 실패할수록 두 배 (최대 2초)
 let dispStyle = localStorage.dispStyle || 'full', curState = 'off', curStatusKey = 'connecting';
 let connMode = null, lastRtt = 0;
 
@@ -276,6 +280,7 @@ function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen = () => { ws.send(JSON.stringify({type:'join', role:'phone', room, cam}));
+    reDelay = 250;                                           // 정상 접속 → 대기시간 초기화
     connMode = (location.protocol === 'https:') ? 'online' : 'offline';
     renderConn();
     const sendPing = () => { if (ws.readyState===1) ws.send(JSON.stringify({type:'ping', t: Date.now()})); };
@@ -291,7 +296,7 @@ function connect() {
     else if (d.type === 'pong' && d.t) { lastRtt = Date.now() - d.t;
       if (ws.readyState===1) ws.send(JSON.stringify({type:'rtt', ms: lastRtt}));   // 서버→호스트로 전달
       renderConn(); } };
-  ws.onclose = () => { clearInterval(pingTimer); if (manualClose) { manualClose = false; return; } setTally('off', 'disconnected'); connMode = null; $('conn').textContent = t('reconnecting'); setTimeout(connect, 2000); };
+  ws.onclose = () => { clearInterval(pingTimer); if (manualClose) { manualClose = false; return; } setTally('off', 'disconnected'); connMode = null; $('conn').textContent = t('reconnecting'); setTimeout(connect, reDelay); reDelay = Math.min(reDelay * 2, 2000); };
   ws.onerror = () => ws.close();
 }
 function render(d) {
