@@ -608,7 +608,7 @@ $('importOk').onclick = () => {
 };
 
 $('gen').onclick = () => {
-  $('room').value = Array.from({length: 6}, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*32)]).join('');
+  $('room').value = Array.from(crypto.getRandomValues(new Uint8Array(6)), b => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');   // 암호학적 난수 (2026-09-17 보안)
 };
 $('start').onclick = () => {
   room = $('room').value.trim().toUpperCase();

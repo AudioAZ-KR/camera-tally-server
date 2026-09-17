@@ -216,7 +216,7 @@ const REGION_LETTER = { 'camera-tally.onrender.com':'S', 'camera-tally-eu.onrend
 $('create').onclick = () => {
   const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';                 // O·0·I·1 제외 (호스트 gen_code 와 동일)
   const pre = REGION_LETTER[location.hostname] || '';           // 지역 서버가 아니면(내장 서버 등) 접두어 없이
-  const rest = Array.from({length: pre ? 5 : 6}, () => A[Math.floor(Math.random()*A.length)]).join('');
+  const rest = Array.from(crypto.getRandomValues(new Uint8Array(pre ? 5 : 6)), b => A[b % 32]).join('');   // 암호학적 난수 (2026-09-17 보안)
   showRoom(pre + rest);
 };
 $('join').onclick = () => {
