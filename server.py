@@ -45,6 +45,12 @@ DEMO_DAYS = float(os.environ.get("DEMO_DAYS", "7"))
 demo_first: dict = {}          # device -> 데모 최초 확인 epoch (메모리; 재배포 시 초기화 — 앱이 보내는 started가 1차 근거)
 demo_last_seen: dict = {}      # device -> 데모 브릿지가 마지막으로 접속해 있던 epoch (실행 중 만료 유예용)
 DEMO_GRACE_SEC = 12 * 3600     # 데모가 실행 중에 만료돼도 그 세션(재접속 포함)은 이 시간 안이면 허용 — 사장님 2026-09-05 "실행 중 만료돼도 끄지 말자"
+# 서명된 데모 증빙 (2026-09-17 사장님 결정: 데모는 계정 1회 + 기기 1회, 서버 기록). Supabase Edge Function demo-start 가
+# LICENSE_SIGNING_KEY 로 서명한다. 이 공개키는 비밀이 아니다(호스트 앱 license_online.LICENSE_PUBKEY 와 같은 값).
+DEMO_PUBKEY = os.environ.get("DEMO_PUBKEY", "H6uGNvTpc3tL69pG8bwIsHaoO3cvCAqrHTp5aVqrChg=")
+# 서명 없는 옛 데모(앱이 보낸 '시작 시각'만 믿던 방식)를 받아 주는 마지막 시각. 1.0 (80) 이하 데모 사용자 전환용.
+# 기본 2026-10-01 00:00 KST. 그 뒤로는 서명된 증빙이 없으면 데모 온라인을 거부한다.
+DEMO_LEGACY_UNTIL = float(os.environ.get("DEMO_LEGACY_UNTIL", "1790780400"))
 bridge_meta: dict = {}         # bridge ws -> {"mode": "licensed"|"demo", "device": ...}
 # ---- 보안 보강 (2026-09-05 점검) ----
 import re as _re, hashlib as _hl
@@ -127,15 +133,16 @@ def _cleanup_room(room):
 def _today():
     return time.strftime("%Y-%m-%d", time.gmtime())
 
-async def verify_license(token: str, device: str) -> bool:
-    """호스트가 보낸 계정 토큰으로 이 기기의 활성 등록(activations)이 있는지 Supabase에 확인 (RLS: 본인 라이선스만 보임)."""
+async def verify_license(token: str, device: str):
+    """호스트가 보낸 계정 토큰으로 이 기기의 활성 등록(activations)이 있는지 Supabase에 확인 (RLS: 본인 라이선스만 보임).
+    True = 유효한 라이선스 · False = 확인했는데 없음(만료·해제·환불) · None = 확인 자체를 못 함(토큰 만료·Supabase 오류)."""
     if not token or not device or not _ID_RE.match(device) or len(token) > 4096: return False
     try:
         import aiohttp as _aio
         url = (SUPABASE_URL + "/rest/v1/activations?select=id,binding_id,licenses(status,product_id,expires_at)&binding_id=eq." + _q(device, safe=""))
         async with _aio.ClientSession() as sess:
             async with sess.get(url, headers={"apikey": SUPABASE_ANON, "Authorization": "Bearer " + token}, timeout=_aio.ClientTimeout(total=6)) as r:
-                if r.status != 200: return False
+                if r.status != 200: return None
                 rows = await r.json()
         for a in rows or []:
             lic = a.get("licenses") or {}
@@ -148,7 +155,7 @@ async def verify_license(token: str, device: str) -> bool:
                 except Exception: return True
         return False
     except Exception as e:
-        print(f"[lic   ] verify error {e!r}", flush=True); return False
+        print(f"[lic   ] verify error {e!r}", flush=True); return None
 
 def demo_left(device: str, started=None) -> int:
     """데모 7일 중 남은 초. 앱이 보낸 시작 시각과 서버가 처음 본 시각 중 이른 쪽 기준."""
@@ -159,13 +166,50 @@ def demo_left(device: str, started=None) -> int:
     demo_first[device] = first
     return max(0, int(DEMO_DAYS * 86400 - (now - first)))
 
+LICENSE_GRACE_SEC = 7 * 86400    # 서명된 라이선스 증빙으로 온라인 입장을 인정하는 기간. 증빙은 세션이 끊겼을 때만 쓰이고 온라인 확인마다 새로 발급되므로
+                                 # 짧게 둔다 — 환불·회수 뒤 증빙만으로 온라인을 쓰는 기간을 줄인다 (검수 2026-09-17)
+
+def license_proof_state(proof, device: str):
+    """호스트가 보낸 서명된 라이선스 증빙(Edge Function license-proof 발급)이 유효하고 이 기기 것이면 내용(dict), 아니면 None.
+    로그인 세션이 서버에서 끊겨 토큰 확인이 실패해도 정식 사용자가 데모로 취급돼 거부되지 않게 한다 (사장님 맥 2026-09-17 재현)."""
+    try:
+        import base64 as _b64, datetime as _dt
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        payload = str((proof or {}).get("payload") or ""); sig = _b64.b64decode(str((proof or {}).get("signature") or ""), validate=True)
+        if not payload or len(payload) > 1024 or len(sig) != 64: return None
+        Ed25519PublicKey.from_public_bytes(_b64.b64decode(DEMO_PUBKEY)).verify(sig, payload.encode("utf-8"))
+        st = json.loads(payload)
+        if "kind" in st or st.get("product_id") != "TALLY" or not st.get("license_id") or st.get("binding_id") != device: return None
+        now = time.time(); ia = float(st.get("issued_at") or 0)
+        if ia > now + 300 or now - ia > LICENSE_GRACE_SEC: return None
+        exp = st.get("expires_at") or ""
+        if exp and _dt.datetime.fromisoformat(str(exp).replace("Z", "+00:00")).timestamp() <= now: return None
+        return st
+    except Exception:
+        return None
+
+def demo_proof_state(proof, device: str):
+    """호스트가 보낸 서명된 데모 증빙이 유효하고 이 기기 것이면 서버가 서명한 내용(dict), 아니면 None."""
+    try:
+        import base64 as _b64
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        payload = str((proof or {}).get("payload") or ""); sig = _b64.b64decode(str((proof or {}).get("signature") or ""), validate=True)
+        if not payload or len(payload) > 1024 or len(sig) != 64: return None
+        Ed25519PublicKey.from_public_bytes(_b64.b64decode(DEMO_PUBKEY)).verify(sig, payload.encode("utf-8"))   # 틀리면 예외
+        st = json.loads(payload)
+        if st.get("kind") != "demo" or st.get("product_id") != "TALLY-DEMO" or st.get("binding_id") != device: return None
+        float(st["started_at"]); float(st["expires_at"])
+        return st
+    except Exception:
+        return None
+
 async def demo_close(ws, room):
     try: await ws.send_str(json.dumps({"type": "demo_limit", "left": 0}))
     except Exception: pass
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-17.4"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-17.5"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -365,10 +409,29 @@ async def ws_handler(request):
                         await ws.send_str(json.dumps({"type": "upgrade_required",
                                                       "msg": "This version is no longer supported. Get the latest Flare Tally at audioazpro.com"}))
                         await ws.close(); return ws
-                    mode = "licensed" if await verify_license(str(auth.get("token", "")), str(auth.get("device", ""))) else "demo"
+                    lic_ok = await verify_license(str(auth.get("token", "")), str(auth.get("device", "")))
+                    mode = "licensed" if lic_ok else "demo"
                     device = str(auth.get("device") or auth.get("demo") or ("ip-" + ip))[:64]
-                    if mode == "demo" and demo_left(device, auth.get("started")) <= 0 and time.time() - demo_last_seen.get(device, 0) > DEMO_GRACE_SEC:
-                        print(f"[bridge] demo limit refused {rm} dev={device}", flush=True)
+                    lp = auth.get("license_proof")
+                    if mode == "demo" and isinstance(lp, dict) and license_proof_state(lp, device):
+                        mode = "licensed"                                # 세션이 끊겨도 서명된 라이선스 증빙이면 정식
+                    if mode == "demo":
+                        dp = auth.get("demo_proof")
+                        dst = demo_proof_state(dp, device) if isinstance(dp, dict) else None
+                        if dst:                                          # 서버가 서명한 기간만 믿는다
+                            demo_first[device] = float(dst["started_at"])
+                            left = int(float(dst["expires_at"]) - time.time())
+                        elif time.time() < DEMO_LEGACY_UNTIL:           # 전환 기간: 옛 앱의 시작 시각 방식
+                            left = demo_left(device, auth.get("started"))
+                        else:
+                            left = 0
+                    if mode == "demo" and left <= 0 and time.time() - demo_last_seen.get(device, 0) > DEMO_GRACE_SEC and auth.get("token") and lic_ok is None:
+                        # 라이선스 확인 자체를 못 함(토큰 만료·Supabase 일시 오류) → 데모 거부로 영구 차단하지 말고 다시 시도하게.
+                        # 확인했는데 라이선스가 없으면(만료·환불, lic_ok False) 아래 데모 제한 안내로 간다
+                        print(f"[bridge] license check failed {rm} dev={device}", flush=True)
+                        await ws.send_str(json.dumps({"type": "error", "code": "license_check"})); await ws.close(); return ws
+                    if mode == "demo" and left <= 0 and time.time() - demo_last_seen.get(device, 0) > DEMO_GRACE_SEC:
+                        print(f"[bridge] demo limit refused {rm} dev={device} signed={int(bool(dst))}", flush=True)
                         await ws.send_str(json.dumps({"type": "demo_limit", "left": 0})); await ws.close(); return ws
                     if key: room_owner[rm] = {"key": _key_hash(key), "ts": time.time()}
                 room = rm
