@@ -471,8 +471,10 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
         print(f"[apns] send error: {e!r}", flush=True)
 
 
-async def end_room(room: str):
-    """호스트가 탈리를 끝내면 활동도 종료 표시"""
+async def _end_room_immediate_legacy(room: str):
+    """(2026-09-03 옛 판) 호스트가 탈리를 끝내면 활동도 종료 표시.
+    2026-09-17: 같은 이름의 end_room(2026-09-06, 기기별 종료 예약)을 파일 아래에서 덮어써서
+    server.py 의 apns_live.end_room(room) 호출이 await 없는 코루틴이 돼 **아무것도 안 하던** 버그 → 이름을 바꿔 새 판이 쓰이게 함."""
     if not ENABLED:
         return
     regs = _tokens.get(room) or {}
