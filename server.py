@@ -31,6 +31,9 @@ token_ws: dict = {}            # token -> 이 토큰을 마지막으로 보고�
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://lkbbenyvchddsjsihofv.supabase.co")
 SUPABASE_ANON = os.environ.get("SUPABASE_ANON", "sb_publishable_sMTkTGD-1CktZQqirrjk6Q_0mxgpRG_")   # 공개(publishable) 키
 STATUS_KEY = os.environ.get("STATUS_KEY", "")   # 접속자 현황(/status·/status.html) 접근 키. 미설정이면 현황 비활성(503)
+# 지역 서버끼리 /status 를 모아볼 때 쓰는 서버 전용 키. RELAY_KEY 는 호스트 앱(공개 배포 pkg)에 들어 있어 비밀이 아니므로
+# /status 인증에 쓰면 안 된다(보안 점검 2026-09-17: pkg 에서 키를 꺼내 전 지역 방 목록을 볼 수 있었음). Render 환경변수로만, 4개 서비스 같은 값.
+STATUS_PEER_KEY = os.environ.get("STATUS_PEER_KEY", "")
 # 지역 서버 목록 (호스트 앱 REGIONS와 동일) — /status?all=1 이 다른 지역 현황을 모아 보여줄 때 사용 (2026-09-06 ①, 사장님 지시)
 STATUS_REGIONS = [
     {"L": "S", "name": "Singapore", "city": "싱가폴",     "http": os.environ.get("TALLY_HTTP_S", "https://camera-tally.onrender.com")},
@@ -128,7 +131,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-12.1"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-17.1"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -693,12 +696,12 @@ def _self_region(request):
     return None
 
 async def _fetch_region(session, r):
-    """다른 지역 서버의 /status 를 서버 간 인증(X-Relay-Key)으로 조회. 절전 중이면 콜드스타트라 시간이 걸릴 수 있음."""
+    """다른 지역 서버의 /status 를 서버 간 인증(X-Status-Peer-Key)으로 조회. 절전 중이면 콜드스타트라 시간이 걸릴 수 있음."""
     import aiohttp
     base = {"L": r["L"], "name": r["name"], "city": r["city"], "http": r["http"]}
     t0 = time.time()
     try:
-        async with session.get(r["http"].rstrip("/") + "/status", headers={"X-Relay-Key": RELAY_KEY},
+        async with session.get(r["http"].rstrip("/") + "/status", headers={"X-Status-Peer-Key": STATUS_PEER_KEY},
                                timeout=aiohttp.ClientTimeout(total=15)) as resp:
             ms = int((time.time() - t0) * 1000)
             if resp.status == 200:
@@ -711,13 +714,15 @@ async def _fetch_region(session, r):
 
 async def status(request):
     """GET /status?key=KEY → 접속자 현황 JSON. STATUS_KEY 미설정이면 비활성(503).
-    서버 간 조회는 X-Relay-Key 헤더(RELAY_KEY)로 인증. ?all=1 이면 모든 지역 서버 현황을 모아 돌려준다."""
-    relay_ok = bool(RELAY_KEY) and request.headers.get("X-Relay-Key", "") == RELAY_KEY
-    if not relay_ok:
+    서버 간 조회는 X-Status-Peer-Key 헤더(STATUS_PEER_KEY)로만 인증 — RELAY_KEY 는 받지 않는다. ?all=1 이면 모든 지역 서버 현황을 모아 돌려준다."""
+    import hmac
+    peer = request.headers.get("X-Status-Peer-Key", "")
+    peer_ok = bool(STATUS_PEER_KEY) and hmac.compare_digest(peer, STATUS_PEER_KEY)
+    if not peer_ok:
         if not STATUS_KEY:
             return web.json_response({"ok": False, "error": "disabled",
                                       "hint": "Render 환경변수 STATUS_KEY 를 설정하면 켜집니다."}, status=503)
-        if request.query.get("key", "") != STATUS_KEY:
+        if not hmac.compare_digest(request.query.get("key", ""), STATUS_KEY):
             return web.json_response({"ok": False, "error": "auth"}, status=401)
     me = _status_payload()
     if request.query.get("all") != "1":
