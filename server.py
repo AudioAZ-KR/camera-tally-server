@@ -64,16 +64,22 @@ IOS_PUSH_MAX = 512             # ws ios 메시지의 push(기기 토큰) 길이 
 WS_MSG_PER_SEC = 20            # 소켓당 초당 메시지 상한 — 넘으면 그 소켓을 닫는다
 WS_BRIDGE_MSG_PER_SEC = 100    # 호스트 브릿지는 스위처를 50ms 간격으로 읽어 탈리를 보내므로(초당 최대 20 + ping·공지·타이머) 여유를 둔다
 ROOM_LOOKUP_LIMIT = 60         # IP당 1분 /room 조회 상한
-IOS_ACTIVITY_LIMIT = 30        # IP당 1분 POST /ios/activity 상한
+IOS_ACTIVITY_LIMIT = 120       # IP당 1분 POST /ios/activity 상한 (현장 와이파이 NAT 뒤 폰 수십 대가 재접속·복귀 때마다 등록 — 30은 빠듯)
 room_hits: dict = {}           # ip -> [count, window_start]  (/room)
 ios_hits: dict = {}            # ip -> [count, window_start]  (POST /ios/activity)
 ios_pending: dict = {}         # ws -> 등록(POST /ios/activity) 전에 받은 마지막 ios 메시지(소켓당 1건) — 등록되면 그때 적용
 
 def _client_ip(request):
-    """속도 제한용 클라이언트 IP. X-Forwarded-For 첫 값은 클라이언트가 마음대로 넣을 수 있으므로(위조로 제한 우회)
-    마지막 값 = Render 프록시가 붙인 실제 접속 주소를 쓴다. 헤더가 없으면(로컬·내장 서버) 소켓 주소."""
+    """속도 제한용 클라이언트 IP.
+    1) CF-Connecting-IP / True-Client-IP — 앞단 Cloudflare 가 덮어쓰는 값이라 위조 불가(있으면 이걸 믿는다)
+    2) 없으면 X-Forwarded-For **첫 값** — 위조로 제한을 우회할 순 있지만, 마지막 값을 쓰면 앞단 프록시 IP 하나로
+       전 사용자가 묶여 다 같이 차단될 위험이 있다(운영에서 확인 불가). 오픈 전 판단: 우회 가능 < 전원 차단.
+    3) 헤더가 없으면(로컬·내장 서버) 소켓 주소."""
+    for h in ("CF-Connecting-IP", "True-Client-IP"):
+        v = (request.headers.get(h) or "").strip()
+        if v: return v[:64]
     xff = request.headers.get("X-Forwarded-For", "")
-    return ((xff.split(",")[-1].strip() if xff else "") or request.remote or "?")[:64]
+    return ((xff.split(",")[0].strip() if xff else "") or request.remote or "?")[:64]
 
 def _hit_ok(table, ip, limit):
     """IP당 1분 창 카운터 — limit 이하이면 True"""
@@ -584,7 +590,7 @@ async def reaper(app):
             for dev in sorted(demo_first, key=demo_first.get)[:len(demo_first) - 50000]: demo_first.pop(dev, None)
         for rm, o in list(room_owner.items()):
             if not bridges.get(rm) and not (o.get("cue") and cue_ops.get(rm)) and now - o["ts"] > ROOM_HOLD_SEC: room_owner.pop(rm, None)
-        for tbl in (join_hits, room_hits, ios_hits):
+        for tbl in (join_hits, room_hits, ios_hits, tele_hits):   # tele_hits 도 정리 (IP 수만큼 계속 쌓이던 것)
             for k, h in list(tbl.items()):
                 if now - h[1] > 120: tbl.pop(k, None)
         for rm in list(set(state) | set(notes) | set(timers) | set(cue_state) | set(cue_sheets)):
