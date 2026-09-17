@@ -147,7 +147,7 @@
       <div class="tile empty" id="timerTile"><small id="timerLabel">타이머</small><b id="timerLeft">미설정</b></div>
     </div>
     <div id="msg" class="empty"><small id="lblNotice">공지</small><div class="t" id="msgText">공지 없음</div></div>
-    <div class="foot"><span><span id="conn">서버 연결 중…</span></span><span><select class="langsel" aria-label="Language"></select><button id="styleToggle">테두리</button><button id="leave">설정</button></span></div>
+    <div class="foot"><span><span id="conn">서버 연결 중…</span></span><span><select class="langsel" aria-label="Language"></select><button id="styleToggle">테두리</button><button id="leave">나가기</button></span></div>
   </div>
 </div>
 
@@ -163,7 +163,7 @@ const I18N = {
         disconnected:'연결 끊김', atemOff:'ATEM 오프라인', hostOff:'호스트 오프라인', reconnecting:'재연결 중…',
         clock:'현재 시각', targetTime:'목표 시각', timer:'타이머', timerOver:'타이머 초과', unset:'미설정',
         notice:'공지', noNotice:'공지 없음', connServer:'서버 연결 중…',
-        settings:'설정', border:'테두리', full:'전체화면',
+        leave:'나가기', border:'테두리', full:'전체화면',
         roomWord:'방', connectedWord:'연결됨', onlineWord:'온라인', offlineWord:'오프라인(같은 Wi-Fi)',
         targetWord:'목표', untilWord:'까지', overWord:'초과' },
   en: { title:'Flare Tally', room:'Room Code', cam:'My Camera No.', connect:'Connect', openApp:'Open in app',
@@ -171,7 +171,7 @@ const I18N = {
         disconnected:'Disconnected', atemOff:'ATEM Offline', hostOff:'Host offline', reconnecting:'Reconnecting…',
         clock:'Current Time', targetTime:'Target Time', timer:'Timer', timerOver:'Timer Over', unset:'Not set',
         notice:'Notice', noNotice:'No notice', connServer:'Connecting…',
-        settings:'Setup', border:'Border', full:'Fullscreen',
+        leave:'Leave', border:'Border', full:'Fullscreen',
         roomWord:'Room', connectedWord:'Connected', onlineWord:'Online', offlineWord:'Offline (same Wi-Fi)',
         targetWord:'Target', untilWord:'left', overWord:'over' },
   ja: { title:'Flare Tally', room:'ルームコード', cam:'自分のカメラ番号', connect:'接続', openApp:'アプリで開く',
@@ -179,7 +179,7 @@ const I18N = {
         disconnected:'接続が切れました', atemOff:'ATEM オフライン', hostOff:'ホスト オフライン', reconnecting:'再接続中…',
         clock:'現在時刻', targetTime:'目標時刻', timer:'タイマー', timerOver:'タイマー超過', unset:'未設定',
         notice:'お知らせ', noNotice:'お知らせなし', connServer:'サーバー接続中…',
-        settings:'設定', border:'枠線', full:'全画面',
+        leave:'退出', border:'枠線', full:'全画面',
         roomWord:'ルーム', connectedWord:'接続済み', onlineWord:'オンライン', offlineWord:'オフライン（同一Wi-Fi）',
         targetWord:'目標', untilWord:'まで', overWord:'超過' },
   zh: { title:'Flare Tally', room:'房间代码', cam:'我的机位号', connect:'连接', openApp:'用 App 打开',
@@ -187,7 +187,7 @@ const I18N = {
         disconnected:'连接断开', atemOff:'ATEM 离线', hostOff:'主机离线', reconnecting:'重新连接中…',
         clock:'当前时间', targetTime:'目标时间', timer:'计时器', timerOver:'计时超时', unset:'未设置',
         notice:'通知', noNotice:'暂无通知', connServer:'连接服务器中…',
-        settings:'设置', border:'边框', full:'全屏',
+        leave:'离开', border:'边框', full:'全屏',
         roomWord:'房间', connectedWord:'已连接', onlineWord:'在线', offlineWord:'离线（同一 Wi-Fi）',
         targetWord:'目标', untilWord:'剩余', overWord:'超时' },
   es: { title:'Flare Tally', room:'Código de Sala', cam:'N.º de mi cámara', connect:'Conectar', openApp:'Abrir en la app',
@@ -195,7 +195,7 @@ const I18N = {
         disconnected:'Desconectado', atemOff:'ATEM sin conexión', hostOff:'Host sin conexión', reconnecting:'Reconectando…',
         clock:'Hora actual', targetTime:'Hora objetivo', timer:'Temporizador', timerOver:'Tiempo agotado', unset:'Sin definir',
         notice:'Aviso', noNotice:'Sin avisos', connServer:'Conectando…',
-        settings:'Configuración', border:'Borde', full:'Pantalla completa',
+        leave:'Salir', border:'Borde', full:'Pantalla completa',
         roomWord:'Sala', connectedWord:'Conectado', onlineWord:'En línea', offlineWord:'Sin conexión (misma Wi-Fi)',
         targetWord:'Objetivo', untilWord:'restante', overWord:'excedido' },
   fr: { title:'Flare Tally', room:'Code de salle', cam:'N° de ma caméra', connect:'Connexion', openApp:'Ouvrir dans l’app',
@@ -203,7 +203,7 @@ const I18N = {
         disconnected:'Déconnecté', atemOff:'ATEM hors ligne', hostOff:'Hôte hors ligne', reconnecting:'Reconnexion…',
         clock:'Heure actuelle', targetTime:'Heure cible', timer:'Minuteur', timerOver:'Temps dépassé', unset:'Non défini',
         notice:'Annonce', noNotice:'Aucune annonce', connServer:'Connexion…',
-        settings:'Réglages', border:'Bordure', full:'Plein écran',
+        leave:'Quitter', border:'Bordure', full:'Plein écran',
         roomWord:'Salle', connectedWord:'Connecté', onlineWord:'En ligne', offlineWord:'Hors ligne (même Wi-Fi)',
         targetWord:'Cible', untilWord:'restant', overWord:'dépassé' },
   de: { title:'Flare Tally', room:'Raumcode', cam:'Meine Kameranr.', connect:'Verbinden', openApp:'In der App öffnen',
@@ -211,7 +211,7 @@ const I18N = {
         disconnected:'Getrennt', atemOff:'ATEM offline', hostOff:'Host offline', reconnecting:'Neu verbinden…',
         clock:'Aktuelle Zeit', targetTime:'Zielzeit', timer:'Timer', timerOver:'Timer abgelaufen', unset:'Nicht gesetzt',
         notice:'Hinweis', noNotice:'Kein Hinweis', connServer:'Verbinden…',
-        settings:'Einrichtung', border:'Rahmen', full:'Vollbild',
+        leave:'Verlassen', border:'Rahmen', full:'Vollbild',
         roomWord:'Raum', connectedWord:'Verbunden', onlineWord:'Online', offlineWord:'Offline (gleiches WLAN)',
         targetWord:'Ziel', untilWord:'übrig', overWord:'über' },
   it: { title:'Flare Tally', room:'Codice sala', cam:'N. mia telecamera', connect:'Connetti', openApp:'Apri nell’app',
@@ -219,7 +219,7 @@ const I18N = {
         disconnected:'Disconnesso', atemOff:'ATEM offline', hostOff:'Host offline', reconnecting:'Riconnessione…',
         clock:'Ora attuale', targetTime:'Ora obiettivo', timer:'Timer', timerOver:'Tempo scaduto', unset:'Non impostato',
         notice:'Avviso', noNotice:'Nessun avviso', connServer:'Connessione…',
-        settings:'Impostazioni', border:'Bordo', full:'Schermo intero',
+        leave:'Esci', border:'Bordo', full:'Schermo intero',
         roomWord:'Sala', connectedWord:'Connesso', onlineWord:'Online', offlineWord:'Offline (stessa Wi-Fi)',
         targetWord:'Obiettivo', untilWord:'rimasto', overWord:'oltre' }
 };
@@ -250,7 +250,7 @@ function applyLang() {
   $('lblWait').textContent = t('wait');
   $('lblClock').textContent = t('clock');
   $('lblNotice').textContent = t('notice');
-  $('leave').textContent = t('settings');
+  $('leave').textContent = t('leave');   // 방에서 나가 첫 화면으로 — 예전 이름 '설정'이 동작과 달라 헷갈렸다 (사장님 2026-09-17)
   renderLangSel();
   $('status').textContent = t(curStatusKey);
   applyStyle();
