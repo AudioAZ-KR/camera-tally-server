@@ -16,7 +16,7 @@
   --tally-pgm:    #FF2A1F;   /* ON AIR */
   --tally-pvw:    #19C37D;   /* PREVIEW */
   --tally-idle:   #1E2024;   /* 연결됐지만 대기 */
-  --tally-off:    #2A2C31;   /* ATEM 오프라인 */
+  --tally-off:    #2A2C31;   /* 스위처 오프라인 */
   --font: "Pretendard", -apple-system, "Apple SD Gothic Neo", system-ui, sans-serif;
   --mono: "SF Mono", Menlo, Consolas, monospace;
 }

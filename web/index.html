@@ -37,7 +37,7 @@
 <body>
 <div class="brand-bar"><img src="/logo.svg" alt="AudioAZ" onerror="this.remove()"><select class="langsel" aria-label="Language"></select></div>
 <h1 id="lblTitle">스마트폰 카메라 탈리</h1>
-<p class="sub" id="lblSub">ATEM Mini 탈리를 LTE/5G로 어디서나 스마트폰에 표시</p>
+<p class="sub" id="lblSub">스위처 탈리를 LTE/5G로 어디서나 스마트폰에 표시</p>
 
 <div id="home">
   <div class="card">
@@ -68,8 +68,8 @@
     <div class="cams" id="cams"></div>
   </div>
   <div class="card">
-    <h2 id="lblAtemTitle">ATEM 연결</h2>
-    <p id="lblStep1" style="color:var(--muted);font-size:14px;line-height:1.5;margin-bottom:12px">맥에 Flare Tally 앱을 설치하고 ATEM IP와 이 방 코드를 입력하면 탈리가 시작됩니다.</p>
+    <h2 id="lblAtemTitle">스위처 연결</h2>
+    <p id="lblStep1" style="color:var(--muted);font-size:14px;line-height:1.5;margin-bottom:12px">맥에 Flare Tally 앱을 설치하고 스위처 IP와 이 방 코드를 입력하면 탈리가 시작됩니다.</p>
     <a class="btn-link" href="https://audioazpro.com/product-flare-tally.html" target="_blank" rel="noopener" id="lblDownload">Flare Tally 다운로드</a>
   </div>
   <button class="sec" id="back">처음으로</button>
@@ -83,75 +83,75 @@ const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location
 // ===== 다국어 (8개 언어) =====
 const LANGS = [['en','English'],['ko','한국어'],['ja','日本語'],['zh','中文'],['es','Español'],['fr','Français'],['de','Deutsch'],['it','Italiano']];
 const I18N = {
-  ko: { pageTitle:'Flare Tally', title:'스마트폰 카메라 탈리', sub:'ATEM Mini 탈리를 LTE/5G로 어디서나 스마트폰에 표시',
+  ko: { pageTitle:'Flare Tally', title:'스마트폰 카메라 탈리', sub:'스위처 탈리를 LTE/5G로 어디서나 스마트폰에 표시',
         dirTitle:'감독 · 새 방 만들기', create:'방 코드 생성',
         opTitle:'카메라맨 · 방에 접속', joinRoom:'방 코드', joinCam:'내 카메라 번호', join:'탈리 열기',
         roomTitle:'방 코드', share:'이 코드를 카메라맨들에게 알려주세요.', cams:'카메라 수', links:'탈리 페이지 공유 링크:',
-        atemTitle:'ATEM 연결',
-        step1:'맥에 Flare Tally 앱을 설치하고 ATEM IP와 이 방 코드를 입력하면 탈리가 시작됩니다.',
+        atemTitle:'스위처 연결',
+        step1:'맥에 Flare Tally 앱을 설치하고 스위처 IP와 이 방 코드를 입력하면 탈리가 시작됩니다.',
         download:'Flare Tally 다운로드',
         back:'처음으로', needInput:'방 코드와 카메라 번호를 입력하세요',
         cueTitle:'Flare Cue', cueOp:'오퍼레이터 콘솔', cueRecv:'큐 라이트 열기 (수신)' },
-  en: { pageTitle:'Flare Tally', title:'Smartphone Camera Tally', sub:'Show ATEM Mini tally on any smartphone over LTE/5G',
+  en: { pageTitle:'Flare Tally', title:'Smartphone Camera Tally', sub:'Show switcher tally on any smartphone over LTE/5G',
         dirTitle:'Director · Create a room', create:'Create room code',
         opTitle:'Camera operator · Join a room', joinRoom:'Room code', joinCam:'My camera no.', join:'Open tally',
         roomTitle:'Room code', share:'Share this code with your camera operators.', cams:'Cameras', links:'Tally page share links:',
-        atemTitle:'Connect ATEM',
-        step1:'Install the Flare Tally app on a Mac, enter your ATEM IP and this room code, and tally starts.',
+        atemTitle:'Connect switcher',
+        step1:'Install the Flare Tally app on a Mac, enter your switcher IP and this room code, and tally starts.',
         download:'Download Flare Tally',
         back:'Back to start', needInput:'Enter a room code and camera number',
         cueTitle:'Flare Cue', cueOp:'Operator console', cueRecv:'Open cue light (receiver)' },
-  ja: { pageTitle:'Flare Tally', title:'スマートフォン カメラタリー', sub:'ATEM Mini のタリーを LTE/5G でどこでもスマホに表示',
+  ja: { pageTitle:'Flare Tally', title:'スマートフォン カメラタリー', sub:'スイッチャーのタリーを LTE/5G でどこでもスマホに表示',
         dirTitle:'ディレクター · 新しいルーム作成', create:'ルームコードを生成',
         opTitle:'カメラマン · ルームに参加', joinRoom:'ルームコード', joinCam:'自分のカメラ番号', join:'タリーを開く',
         roomTitle:'ルームコード', share:'このコードをカメラマンに伝えてください。', cams:'カメラ台数', links:'タリーページ共有リンク:',
-        atemTitle:'ATEM 接続',
-        step1:'Mac に Flare Tally アプリをインストールし、ATEM の IP とこのルームコードを入力するとタリーが始まります。',
+        atemTitle:'スイッチャー接続',
+        step1:'Mac に Flare Tally アプリをインストールし、スイッチャーの IP とこのルームコードを入力するとタリーが始まります。',
         download:'Flare Tally をダウンロード',
         back:'最初に戻る', needInput:'ルームコードとカメラ番号を入力してください',
         cueTitle:'Flare Cue', cueOp:'オペレーター コンソール', cueRecv:'キューライトを開く（受信）' },
-  zh: { pageTitle:'Flare Tally', title:'智能手机摄像机 Tally', sub:'通过 LTE/5G 随时随地在手机上显示 ATEM Mini 的 Tally',
+  zh: { pageTitle:'Flare Tally', title:'智能手机摄像机 Tally', sub:'通过 LTE/5G 随时随地在手机上显示切换台的 Tally',
         dirTitle:'导播 · 创建新房间', create:'生成房间代码',
         opTitle:'摄像师 · 加入房间', joinRoom:'房间代码', joinCam:'我的机位号', join:'打开 Tally',
         roomTitle:'房间代码', share:'请把此代码告诉摄像师们。', cams:'摄像机数量', links:'Tally 页面分享链接:',
-        atemTitle:'连接 ATEM',
-        step1:'在 Mac 上安装 Flare Tally 应用，输入 ATEM IP 和此房间码即可开始 Tally。',
+        atemTitle:'连接切换台',
+        step1:'在 Mac 上安装 Flare Tally 应用，输入切换台 IP 和此房间码即可开始 Tally。',
         download:'下载 Flare Tally',
         back:'返回首页', needInput:'请输入房间代码和机位号',
         cueTitle:'Flare Cue', cueOp:'操作员控制台', cueRecv:'打开提示灯（接收）' },
-  es: { pageTitle:'Flare Tally', title:'Tally de Cámara para Smartphone', sub:'Muestra el tally de ATEM Mini en cualquier smartphone por LTE/5G',
+  es: { pageTitle:'Flare Tally', title:'Tally de Cámara para Smartphone', sub:'Muestra el tally del mezclador en cualquier smartphone por LTE/5G',
         dirTitle:'Director · Crear una sala', create:'Crear código de sala',
         opTitle:'Operador de cámara · Unirse a una sala', joinRoom:'Código de sala', joinCam:'N.º de mi cámara', join:'Abrir tally',
         roomTitle:'Código de sala', share:'Comparte este código con tus operadores de cámara.', cams:'Cámaras', links:'Enlaces para compartir la página de tally:',
-        atemTitle:'Conectar ATEM',
-        step1:'Instala la app Flare Tally en un Mac, introduce la IP del ATEM y este código de sala, y el tally comienza.',
+        atemTitle:'Conectar mezclador',
+        step1:'Instala la app Flare Tally en un Mac, introduce la IP del mezclador y este código de sala, y el tally comienza.',
         download:'Descargar Flare Tally',
         back:'Volver al inicio', needInput:'Introduce un código de sala y un número de cámara',
         cueTitle:'Flare Cue', cueOp:'Consola del operador', cueRecv:'Abrir luz de aviso (receptor)' },
-  fr: { pageTitle:'Flare Tally', title:'Tally Caméra pour Smartphone', sub:'Affichez le tally de l’ATEM Mini sur n’importe quel smartphone via LTE/5G',
+  fr: { pageTitle:'Flare Tally', title:'Tally Caméra pour Smartphone', sub:'Affichez le tally du mélangeur sur n’importe quel smartphone via LTE/5G',
         dirTitle:'Réalisateur · Créer une salle', create:'Créer un code de salle',
         opTitle:'Cadreur · Rejoindre une salle', joinRoom:'Code de salle', joinCam:'N° de ma caméra', join:'Ouvrir le tally',
         roomTitle:'Code de salle', share:'Communiquez ce code à vos cadreurs.', cams:'Caméras', links:'Liens de partage de la page tally :',
-        atemTitle:'Connexion ATEM',
-        step1:'Installez l’app Flare Tally sur un Mac, saisissez l’IP de l’ATEM et ce code de salle : le tally démarre.',
+        atemTitle:'Connexion au mélangeur',
+        step1:'Installez l’app Flare Tally sur un Mac, saisissez l’IP du mélangeur et ce code de salle : le tally démarre.',
         download:'Télécharger Flare Tally',
         back:'Retour au début', needInput:'Saisissez un code de salle et un numéro de caméra',
         cueTitle:'Flare Cue', cueOp:'Console opérateur', cueRecv:'Ouvrir le feu (récepteur)' },
-  de: { pageTitle:'Flare Tally', title:'Smartphone Kamera-Tally', sub:'Zeige das Tally des ATEM Mini über LTE/5G auf jedem Smartphone',
+  de: { pageTitle:'Flare Tally', title:'Smartphone Kamera-Tally', sub:'Zeige das Tally des Mischers über LTE/5G auf jedem Smartphone',
         dirTitle:'Regie · Neuen Raum erstellen', create:'Raumcode erstellen',
         opTitle:'Kameramann · Raum beitreten', joinRoom:'Raumcode', joinCam:'Meine Kameranr.', join:'Tally öffnen',
         roomTitle:'Raumcode', share:'Teile diesen Code mit deinen Kameraleuten.', cams:'Kameras', links:'Freigabelinks zur Tally-Seite:',
-        atemTitle:'ATEM verbinden',
-        step1:'Installiere die Flare Tally App auf einem Mac, gib die ATEM-IP und diesen Raumcode ein – das Tally startet.',
+        atemTitle:'Mischer verbinden',
+        step1:'Installiere die Flare Tally App auf einem Mac, gib die Mischer-IP und diesen Raumcode ein – das Tally startet.',
         download:'Flare Tally herunterladen',
         back:'Zurück zum Start', needInput:'Gib einen Raumcode und eine Kameranummer ein',
         cueTitle:'Flare Cue', cueOp:'Operator-Konsole', cueRecv:'Cue-Licht öffnen (Empfänger)' },
-  it: { pageTitle:'Flare Tally', title:'Tally Telecamera per Smartphone', sub:'Mostra il tally dell’ATEM Mini su qualsiasi smartphone tramite LTE/5G',
+  it: { pageTitle:'Flare Tally', title:'Tally Telecamera per Smartphone', sub:'Mostra il tally del mixer su qualsiasi smartphone tramite LTE/5G',
         dirTitle:'Regista · Crea una sala', create:'Crea codice sala',
         opTitle:'Operatore · Entra in una sala', joinRoom:'Codice sala', joinCam:'N. mia telecamera', join:'Apri tally',
         roomTitle:'Codice sala', share:'Condividi questo codice con i tuoi operatori.', cams:'Telecamere', links:'Link di condivisione della pagina tally:',
-        atemTitle:'Collega ATEM',
-        step1:'Installa l’app Flare Tally su un Mac, inserisci l’IP dell’ATEM e questo codice sala: il tally parte.',
+        atemTitle:'Collega il mixer',
+        step1:'Installa l’app Flare Tally su un Mac, inserisci l’IP del mixer e questo codice sala: il tally parte.',
         download:'Scarica Flare Tally',
         back:'Torna all’inizio', needInput:'Inserisci un codice sala e un numero di telecamera',
         cueTitle:'Flare Cue', cueOp:'Console operatore', cueRecv:'Apri luce di cue (ricevitore)' }

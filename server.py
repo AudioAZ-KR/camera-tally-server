@@ -2,7 +2,7 @@
 """
 탈리 중계 서버 (aiohttp)
 - HTTP : web/ 폴더의 탈리 페이지 서빙
-- WS   : /ws  브릿지(ATEM 상태 송신) <-> 스마트폰(수신) 중계, 방 코드별 격리
+- WS   : /ws  브릿지(스위처 상태 송신) <-> 스마트폰(수신) 중계, 방 코드별 격리
 - 접속 카메라 명단(roster)을 추적해 호스트(브릿지)로 전송
 - 호스트 공지 메시지(msg)·타이머(timer)를 방 단위로 보관하고 폰에 브로드캐스트 (늦게 접속한 폰도 현재 상태 수신)
 - 무대 큐 라이트: 오퍼레이터(cueop)가 채널별 STANDBY/GO/OFF를 지정, 수신 폰(cue)이 전체화면 색으로 표시.
@@ -231,7 +231,7 @@ def timer_msg(room):
                        "target": t["target"], "now": now_ms()})
 
 def tally_msg(room):
-    # host: 호스트(브릿지)가 붙어 있나 — 웹/폰이 'ATEM 오프라인'과 '호스트 오프라인'을 구분해 표시 (2026-09-07)
+    # host: 호스트(브릿지)가 붙어 있나 — 웹/폰이 '스위처 오프라인'과 '호스트 오프라인'을 구분해 표시 (2026-09-07)
     return json.dumps({"type": "tally", **state.get(room, OFFLINE), "host": bool(bridges.get(room))})
 
 # ===== 큐 라이트 =====
