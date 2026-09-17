@@ -57,6 +57,24 @@
   #msg .t { font-size: min(3.6vh, 6vw); font-weight: 700; line-height: 1.3; word-break: keep-all; white-space: pre-wrap; }
   #msg.empty .t { color: var(--muted); font-weight: 400; font-size: 3vh; }
   #msg.new { animation: pop .5s ease; }
+  /* 공지가 칸을 넘치면 한 줄로 이어 붙여 흐르게 (앱과 같은 동작, 2026-09-17).
+     예전엔 칸 안 스크롤만 돼서 작은 화면·아이패드 작은 창에서 첫 줄만 보이고 나머지가 표시 없이 가려졌다. */
+  #msg { min-height: 0; }
+  /* 낮은 세로 화면(아이패드 작은 창·아이폰 SE): 시각·타일을 줄이고, 목표 시각·타이머가 둘 다 미설정이면 숨겨 공지 칸을 확보 */
+  @media (orientation: portrait) and (max-height: 600px) {
+    .clock small { display: none; }
+    .clock b { font-size: min(7vh, 13vw); }
+    .tile { min-height: 0; padding: 4px 8px; }
+    .tile b { font-size: min(4vh, 8vw); }
+    .tile.empty b { font-size: 2.4vh; }
+    .row2:has(> .tile.empty + .tile.empty) { display: none; }
+    #panel { gap: 8px; }
+    #msg { min-height: 44px; padding: 8px 12px; }
+  }
+  #msg.marq { overflow: hidden; }
+  #msg .t.marq { white-space: nowrap; display: inline-block; word-break: normal; will-change: transform;
+                 animation: notice-marq var(--marq-dur, 12s) linear .8s infinite; }
+  @keyframes notice-marq { from { transform: translateX(0); } to { transform: translateX(var(--marq-shift, -50%)); } }
   @keyframes pop { 0% { background: var(--raised); } 100% { background: var(--surface); } }
   .foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
   .foot > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -77,8 +95,9 @@
   #tally.mode-border.idle #light .cam { color:var(--muted); }
   #tally.mode-border #styleToggle { margin-right:6px; }
 
-  /* ===== 아이폰 가로모드: 좌(탈리) / 우(시각·타이머·공지) ===== */
-  @media (orientation: landscape) and (max-height: 500px) {
+  /* ===== 가로 화면(아이폰 가로·아이패드 가로 창): 좌(탈리) / 우(시각·타이머·공지) =====
+     높이 500 이하만 가로 배치였더니 700x520 같은 가로 창이 세로 배치가 되어 공지 칸이 한 줄도 안 남았다 → 700 이하로 (2026-09-17) */
+  @media (orientation: landscape) and (max-height: 700px) {
     #tally { flex-direction: row; }
     #light { flex: 0 0 50%; height: 100%; padding-top: 0; padding-left: env(safe-area-inset-left); }
     #light .cam { font-size: min(52vh, 22vw); }
@@ -313,10 +332,31 @@ function render(d) {
 function setTally(cls, statusKey) { curState = cls; curStatusKey = statusKey; $('tally').className = cls + (dispStyle === 'border' ? ' mode-border' : ''); $('status').textContent = t(statusKey); }
 
 let lastMsgTs = 0;
+/** 공지 칸 맞춤: 줄바꿈으로 들어가면 그대로(정지), 넘치면 한 줄로 흐르게. 칸이 한 줄보다 낮으면 글자를 줄인다. */
+function fitNotice() {
+  const box = $('msg'), el = $('msgText');
+  el.classList.remove('marq'); box.classList.remove('marq'); el.style.fontSize = ''; el.style.animationDuration = '';
+  const raw = el.dataset.raw;
+  if (!raw || box.classList.contains('empty')) return;
+  el.textContent = raw;
+  if (box.scrollHeight <= box.clientHeight + 1) return;                      // 들어감 → 정지 표시
+  const cs = getComputedStyle(box), small = box.querySelector('small');
+  const room = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+             - (small ? small.offsetHeight + parseFloat(getComputedStyle(small).marginBottom || 0) : 0);
+  const fs = parseFloat(getComputedStyle(el).fontSize);
+  if (room > 0 && fs * 1.3 > room) el.style.fontSize = Math.max(11, Math.floor(room / 1.3)) + 'px';
+  const line = raw.replace(/\s*\n\s*/g, '  '), gap = '\u00a0'.repeat(12);
+  el.textContent = line + gap + line + gap;                                   // 두 번 이어 붙여 끊김 없이 순환
+  box.classList.add('marq'); el.classList.add('marq');
+  const half = el.scrollWidth / 2;
+  el.style.setProperty('--marq-shift', (-half) + 'px');
+  el.style.animationDuration = Math.max(6, half / 50) + 's';                  // 초당 50px (앱과 같은 속도)
+}
+if (window.ResizeObserver) { let q = 0; new ResizeObserver(() => { cancelAnimationFrame(q); q = requestAnimationFrame(fitNotice); }).observe($('msg')); }
 function showMsg(d) {
   const box = $('msg');
-  if (!d.text) { box.className = 'empty'; $('msgText').textContent = t('noNotice'); lastMsgTs = d.ts || 0; return; }
-  $('msgText').textContent = d.text; box.className = '';
+  if (!d.text) { box.className = 'empty'; delete $('msgText').dataset.raw; $('msgText').textContent = t('noNotice'); fitNotice(); lastMsgTs = d.ts || 0; return; }
+  $('msgText').dataset.raw = d.text; $('msgText').textContent = d.text; box.className = ''; fitNotice();
   if (d.ts && d.ts !== lastMsgTs) { navigator.vibrate?.([100, 60, 100]); box.classList.add('new'); setTimeout(() => box.classList.remove('new'), 600); }
   lastMsgTs = d.ts || 0;
 }
