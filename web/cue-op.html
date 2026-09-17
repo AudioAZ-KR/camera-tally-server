@@ -625,16 +625,35 @@ $('back').onclick = () => {
   $('console').style.display = 'none'; $('setup').style.display = 'block';
 };
 
+// 방 소유 키 (보안 점검 2026-09-17): 큐 전용 방은 처음 연 콘솔의 키로 잠긴다 — 방 코드만 알아서는 조작 불가.
+// 방 코드별로 localStorage 에 보관해 같은 브라우저는 재접속해도 같은 키. 저장이 막힌 브라우저는 이 탭이 열려 있는 동안만 유지.
+const opKeys = {};
+function roomKey(code) {
+  const k = 'cueOpKey:' + code;
+  let v = opKeys[k];
+  if (!v) { try { v = localStorage[k]; } catch {} }
+  if (!/^[0-9a-f]{64}$/.test(v || '')) {
+    const b = new Uint8Array(32); crypto.getRandomValues(b);
+    v = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    try { localStorage[k] = v; } catch {}
+  }
+  return (opKeys[k] = v);
+}
+const ROOM_LOCKED = { ko: '이 방은 다른 콘솔이 사용 중입니다. 새 방 코드를 만드세요.', en: 'This room is in use by another console. Create a new room code.' };
+
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'join', role: 'cueop', room }));
+    ws.send(JSON.stringify({ type: 'join', role: 'cueop', room, auth: { room_key: roomKey(room) } }));
     connected = true; renderConnBadge();
     pingTimer = setInterval(() => ws.readyState === 1 && ws.send('{"type":"ping"}'), 8000);
   };
   ws.onmessage = e => {
     const d = JSON.parse(e.data);
+    if (d.type === 'error' && (d.code === 'room_owned' || d.code === 'room_key_required')) {
+      manualClose = true; alert(ROOM_LOCKED[lang] || ROOM_LOCKED.en); $('back').click(); return;
+    }
     if (d.type === 'cue_state') {
       srvState = d.channels || {};
       // 서버에만 있는 채널(다른 콘솔이 만든 것)도 목록에 반영

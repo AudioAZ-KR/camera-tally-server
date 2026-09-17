@@ -120,7 +120,7 @@ def register(room: str, cam: int, token: str, device: str = ""):
 def _unregister_token(token: str):
     for d in _tokens.values():
         d.pop(token, None)
-    for m in (_last, _env_of, _active, _alerts, _lang, _push_tok, _banner, _keep, _sleeping, _vib):
+    for m in (_last, _env_of, _active, _alerts, _lang, _push_tok, _banner, _keep, _sleeping, _vib, _alive):
         m.pop(token, None)
     dev = _token_device.pop(token, None)
     if dev and _device_token.get(dev) == token:
@@ -133,6 +133,11 @@ def unregister(token: str = "", device: str = ""):
         tok = _device_token.get(device)
         if tok: _unregister_token(tok)
     if token: _unregister_token(token)
+
+
+def is_registered(token: str) -> bool:
+    """POST /ios/activity 로 등록된 토큰인지 — 등록 안 된 토큰에는 상태를 저장하지 않는다 (2026-09-17: ws ios 메시지로 메모리 무한 증가)"""
+    return bool(token) and (token in _token_device or any(token in d for d in _tokens.values()))
 
 
 def device_of(token: str) -> str:
@@ -181,25 +186,25 @@ def cancel_end(device: str):
 
 
 def set_active(token: str, active: bool, alerts=None):
-    if token:
+    if is_registered(token):
         _active[token] = bool(active)
         if alerts is not None: _alerts[token] = bool(alerts)
 
 
 def set_alerts(token: str, alerts: bool):
-    if token: _alerts[token] = bool(alerts)
+    if is_registered(token): _alerts[token] = bool(alerts)
 
 
 def set_push(token: str, hex_: str):
-    if token and hex_: _push_tok[token] = hex_
+    if hex_ and is_registered(token): _push_tok[token] = hex_
 
 
 def set_keep(token: str, on: bool):
-    if token: _keep[token] = bool(on)
+    if is_registered(token): _keep[token] = bool(on)
 
 
 def mark_sleep(token: str, on: bool = True):
-    if token: _sleeping[token] = bool(on)
+    if is_registered(token): _sleeping[token] = bool(on)
 
 
 def is_sleeping(token: str) -> bool:
@@ -208,7 +213,7 @@ def is_sleeping(token: str) -> bool:
 
 
 def mark_alive(token: str):
-    if token: _alive[token] = time.time()
+    if is_registered(token): _alive[token] = time.time()
 
 
 async def probe_liveness(la_token: str) -> bool:
@@ -271,18 +276,18 @@ def treat_close_as_sleep(token: str) -> bool:
 
 def set_env(token: str, env):
     """앱이 알려준 이 빌드의 APNs 환경을 초기값으로 (틀리면 _send가 자동 보정). sandbox|production 만."""
-    if token and env in HOSTS and token not in _env_of: _env_of[token] = env
+    if env in HOSTS and token not in _env_of and is_registered(token): _env_of[token] = env
 
 
 def set_vib(token: str, on: bool):
-    if token: _vib[token] = bool(on)
+    if is_registered(token): _vib[token] = bool(on)
 
 def set_banner(token: str, on: bool):
-    if token: _banner[token] = bool(on)
+    if is_registered(token): _banner[token] = bool(on)
 
 
 def set_lang(token: str, lang):
-    if token and lang in ("ko", "en"): _lang[token] = lang
+    if lang in ("ko", "en") and is_registered(token): _lang[token] = lang
 
 
 _MSG = {"ko": {"pgm": ("CAM {cam} ON AIR", "지금 방송 중"), "idle": ("CAM {cam} 대기", "온에어 해제"), "pvw": ("CAM {cam} PREVIEW", "다음 컷 대기")},

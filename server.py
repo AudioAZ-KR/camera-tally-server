@@ -58,6 +58,32 @@ join_hits: dict = {}           # ip -> [count, window_start]
 _ID_RE = _re.compile(r"^[A-Za-z0-9._:@-]{1,64}$")
 _ROOM_RE = _re.compile(r"^[A-Z0-9_-]{1,16}$")
 _TOKEN_RE = _re.compile(r"^[0-9a-f]{16,256}$")
+# ---- 보안 보강 (2026-09-17 점검) ----
+_CUE_KEY_RE = _re.compile(r"^[0-9a-f]{32,128}$")   # 큐 콘솔 방 소유 키 (cue-op.html 이 32바이트 hex 로 만든다)
+IOS_PUSH_MAX = 512             # ws ios 메시지의 push(기기 토큰) 길이 상한
+WS_MSG_PER_SEC = 20            # 소켓당 초당 메시지 상한 — 넘으면 그 소켓을 닫는다
+WS_BRIDGE_MSG_PER_SEC = 100    # 호스트 브릿지는 스위처를 50ms 간격으로 읽어 탈리를 보내므로(초당 최대 20 + ping·공지·타이머) 여유를 둔다
+ROOM_LOOKUP_LIMIT = 60         # IP당 1분 /room 조회 상한
+IOS_ACTIVITY_LIMIT = 30        # IP당 1분 POST /ios/activity 상한
+room_hits: dict = {}           # ip -> [count, window_start]  (/room)
+ios_hits: dict = {}            # ip -> [count, window_start]  (POST /ios/activity)
+ios_pending: dict = {}         # ws -> 등록(POST /ios/activity) 전에 받은 마지막 ios 메시지(소켓당 1건) — 등록되면 그때 적용
+
+def _client_ip(request):
+    """속도 제한용 클라이언트 IP. X-Forwarded-For 첫 값은 클라이언트가 마음대로 넣을 수 있으므로(위조로 제한 우회)
+    마지막 값 = Render 프록시가 붙인 실제 접속 주소를 쓴다. 헤더가 없으면(로컬·내장 서버) 소켓 주소."""
+    xff = request.headers.get("X-Forwarded-For", "")
+    return ((xff.split(",")[-1].strip() if xff else "") or request.remote or "?")[:64]
+
+def _hit_ok(table, ip, limit):
+    """IP당 1분 창 카운터 — limit 이하이면 True"""
+    now = time.time(); h = table.get(ip)
+    if not h or now - h[1] > 60: table[ip] = [1, now]; return True
+    h[0] += 1; return h[0] <= limit
+
+def _push_ok(push):
+    """ios 메시지의 push(일반 알림용 기기 토큰): 비어 있거나, 길이 상한 안의 hex"""
+    return not push or (len(push) <= IOS_PUSH_MAX and bool(_re.fullmatch(r"[0-9a-f]+", push)))
 
 def _i(x, d=0, lo=None, hi=None):
     """클라이언트 값 → int (잘못된 값은 기본값, 예외로 소켓이 끊기지 않게)"""
@@ -74,12 +100,14 @@ def _rate_ok(ip):
 
 def _key_hash(key): return _hl.sha256(key.encode("utf-8")).hexdigest()
 
-def _room_owned_by_other(room, key):
-    """방에 소유 키가 있고 내 키가 다르면 True (소유자가 접속 중이거나 끊긴 지 ROOM_HOLD_SEC 이내)"""
+def _room_owned_by_other(room, key, bridge=False):
+    """방에 소유 키가 있고 내 키가 다르면 True (소유자가 접속 중이거나 끊긴 지 ROOM_HOLD_SEC 이내)
+    큐 전용 방 소유(cue)는 호스트 브릿지를 막지 않는다 — 무료 큐 콘솔로 호스트 방 코드를 선점하지 못하게 (2026-09-17)"""
     o = room_owner.get(room)
     if not o: return False
+    if bridge and o.get("cue"): return False
     if key and _key_hash(key) == o["key"]: return False
-    return bool(bridges.get(room)) or (time.time() - o["ts"] < ROOM_HOLD_SEC)
+    return bool(bridges.get(room) or (o.get("cue") and cue_ops.get(room))) or (time.time() - o["ts"] < ROOM_HOLD_SEC)
 
 def _room_empty(room):
     return not (rooms.get(room) or bridges.get(room) or cams.get(room) or cue_clients.get(room) or cue_ops.get(room) or cue_recv.get(room))
@@ -131,7 +159,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-17.1"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-17.2"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -255,13 +283,31 @@ async def broadcast_roster(room):
         except Exception:
             bridges[room].discard(ws)
 
+_IOS_KEYS = ("active", "alerts", "lang", "push", "banner", "keep", "vib", "apns_env", "suspend")
+
+def _apply_ios(tok, data):
+    """ws ios 메시지(전면/후면·알림 설정)를 등록된 토큰에 반영"""
+    apns_live.set_active(tok, bool(data.get("active")), data.get("alerts")); apns_live.set_lang(tok, data.get("lang"))
+    if data.get("push"): apns_live.set_push(tok, str(data["push"]).strip().lower())
+    if "banner" in data: apns_live.set_banner(tok, bool(data.get("banner")))
+    if "keep" in data: apns_live.set_keep(tok, bool(data.get("keep")))
+    if "vib" in data: apns_live.set_vib(tok, bool(data.get("vib")))
+    if data.get("apns_env"): apns_live.set_env(tok, str(data.get("apns_env")))
+    apns_live.mark_sleep(tok, bool(data.get("suspend")))     # 잠들 예정 알림 / 다시 활성이면 해제
+    apns_live.cancel_end(apns_live.device_of(tok))            # 앱이 살아있음 → 예약된 종료 취소
+
 async def ws_handler(request):
     ws = web.WebSocketResponse(heartbeat=10, max_msg_size=64 * 1024)
     await ws.prepare(request)
     room, is_bridge, is_cueop, is_cue = None, False, False, False
-    ip = request.headers.get("X-Forwarded-For", request.remote or "?").split(",")[0].strip()[:64]
+    ip = _client_ip(request)
+    rate_n, rate_t = 0, time.time()
     try:
         async for msg in ws:
+            rate_n += 1                                   # 소켓당 초당 메시지 수 제한 (2026-09-17: ios 메시지 폭주로 메모리 증가)
+            if time.time() - rate_t >= 1: rate_n, rate_t = 1, time.time()
+            if rate_n > (WS_BRIDGE_MSG_PER_SEC if is_bridge else WS_MSG_PER_SEC):
+                print(f"[guard ] ws message flood, closing ({ip})", flush=True); await ws.close(code=1008); break
             if msg.type != WSMsgType.TEXT:
                 continue
             try:
@@ -282,13 +328,22 @@ async def ws_handler(request):
                 if rm not in rooms and rm not in cue_clients and len(rooms) + len(cue_clients) >= MAX_ROOMS:
                     await ws.send_str(json.dumps({"type": "error", "code": "server_full"})); await ws.close(); return ws
                 role = data.get("role")
-                if role == "cueop" and _room_owned_by_other(rm, str(data.get("key") or "")[:128]):
+                cauth = data.get("auth") if isinstance(data.get("auth"), dict) else {}
+                ckey = str(cauth.get("room_key") or data.get("key") or "")[:128] if role == "cueop" else ""
+                if role == "cueop" and _room_owned_by_other(rm, ckey):
                     await ws.send_str(json.dumps({"type": "error", "code": "room_owned"})); await ws.close(); return ws
+                # 큐 전용 방(호스트 없음)은 처음 연 콘솔의 키가 방 소유 키 — 방 코드만 알아서는 GO/STANDBY·시트·공지·타이머를 못 만진다 (2026-09-17)
+                # 내장 서버(TALLY_LOCAL_SERVER=1, 오프라인 모드)는 기존처럼 생략. 호스트 방은 위의 기존 규칙 그대로.
+                if role == "cueop" and os.environ.get("TALLY_LOCAL_SERVER") != "1" and not bridges.get(rm) \
+                        and (not room_owner.get(rm) or room_owner[rm].get("cue")):
+                    if not _CUE_KEY_RE.match(ckey):
+                        await ws.send_str(json.dumps({"type": "error", "code": "room_key_required"})); await ws.close(); return ws
+                    room_owner[rm] = {"key": _key_hash(ckey), "ts": time.time(), "cue": True}
                 if role == "bridge":
                     auth = data.get("auth") or {}
                     if not isinstance(auth, dict): auth = {}
                     key = str(auth.get("room_key") or "")[:128]
-                    if _room_owned_by_other(rm, key):                # 다른 호스트의 방 → 브릿지 거부 (탈리 위조 방지)
+                    if _room_owned_by_other(rm, key, bridge=True):   # 다른 호스트의 방 → 브릿지 거부 (탈리 위조 방지)
                         print(f"[guard ] bridge refused: room {rm} owned by another host ({ip})", flush=True)
                         await ws.send_str(json.dumps({"type": "error", "code": "room_owned"})); await ws.close(); return ws
                     # 구버전 배포판 차단(2026-09-05 사장님 지시 "1.0 버전대부터 새 서버"): 온라인 서버는 1.0 신 체계 앱 전용.
@@ -428,16 +483,15 @@ async def ws_handler(request):
                     await cue_broadcast(room)
             elif t == "ios" and room:                # 아이폰 앱: 전면/후면 상태 (전면이면 알림 푸시 생략)
                 tok = str(data.get("token", "")).strip().lower()
-                if tok:
+                push = str(data.get("push") or "").strip().lower()
+                if _TOKEN_RE.match(tok) and _push_ok(push):   # 형식이 틀린 토큰·과대 push 는 무시 (2026-09-17)
+                    old = ios_token.get(ws)
+                    if old and old != tok and token_ws.get(old) is ws: token_ws.pop(old, None)   # 소켓당 토큰 1개만 추적
                     ios_token[ws] = tok; token_ws[tok] = ws
-                    apns_live.set_active(tok, bool(data.get("active")), data.get("alerts")); apns_live.set_lang(tok, data.get("lang"))
-                    if data.get("push"): apns_live.set_push(tok, str(data["push"]).strip().lower())
-                    if "banner" in data: apns_live.set_banner(tok, bool(data.get("banner")))
-                    if "keep" in data: apns_live.set_keep(tok, bool(data.get("keep")))
-                    if "vib" in data: apns_live.set_vib(tok, bool(data.get("vib")))
-                    if data.get("apns_env"): apns_live.set_env(tok, str(data.get("apns_env")))
-                    apns_live.mark_sleep(tok, bool(data.get("suspend")))     # 잠들 예정 알림 / 다시 활성이면 해제
-                    apns_live.cancel_end(apns_live.device_of(tok))            # 앱이 살아있음 → 예약된 종료 취소
+                    if not apns_live.is_registered(tok):          # 아직 등록 전 → 상태를 저장하지 않고 소켓에 마지막 1건만 보관(등록 시 적용)
+                        ios_pending[ws] = {k: data[k] for k in _IOS_KEYS if k in data}; continue
+                    ios_pending.pop(ws, None)
+                    _apply_ios(tok, data)
                     await broadcast_roster(room)          # 전면/후면 바뀌면 호스트 명단에 '잠자는 중' 즉시 반영
             elif t == "rtt" and room:                # 폰이 잰 서버 왕복 지연(ms) 보고 → 호스트에 전달
                 ms = _i(data.get("ms"))
@@ -448,7 +502,7 @@ async def ws_handler(request):
                 ts = data.get("t")
                 await ws.send_str(json.dumps({"type": "pong", "t": ts}) if ts is not None else '{"type":"pong"}')
     finally:
-        seen.pop(ws, None); ws_rtt.pop(ws, None); bridge_meta.pop(ws, None)
+        seen.pop(ws, None); ws_rtt.pop(ws, None); bridge_meta.pop(ws, None); ios_pending.pop(ws, None)
         tok = ios_token.pop(ws, None)
         if tok and token_ws.get(tok) is ws:           # 이 소켓이 아직 토큰 소유자일 때만 (재접속했으면 새 소켓 담당)
             token_ws.pop(tok, None)
@@ -479,6 +533,7 @@ async def ws_handler(request):
                 cue_clients.get(room, set()).discard(ws)
                 print(f"[cueop ] left {room}", flush=True)
                 if not cue_ops.get(room):        # 마지막 오퍼레이터가 나가면 수신 폰에 즉시 오프라인 표시
+                    if (room_owner.get(room) or {}).get("cue"): room_owner[room]["ts"] = time.time()   # 큐 방 소유권 유지 시간 시작
                     await cue_broadcast(room)
             elif is_cue:
                 cue_recv.get(room, {}).pop(ws, None)
@@ -528,9 +583,10 @@ async def reaper(app):
         if len(demo_first) > 50000:
             for dev in sorted(demo_first, key=demo_first.get)[:len(demo_first) - 50000]: demo_first.pop(dev, None)
         for rm, o in list(room_owner.items()):
-            if not bridges.get(rm) and now - o["ts"] > ROOM_HOLD_SEC: room_owner.pop(rm, None)
-        for k, h in list(join_hits.items()):
-            if now - h[1] > 120: join_hits.pop(k, None)
+            if not bridges.get(rm) and not (o.get("cue") and cue_ops.get(rm)) and now - o["ts"] > ROOM_HOLD_SEC: room_owner.pop(rm, None)
+        for tbl in (join_hits, room_hits, ios_hits):
+            for k, h in list(tbl.items()):
+                if now - h[1] > 120: tbl.pop(k, None)
         for rm in list(set(state) | set(notes) | set(timers) | set(cue_state) | set(cue_sheets)):
             _cleanup_room(rm)
         for bws, meta in list(bridge_meta.items()):
@@ -541,7 +597,7 @@ async def reaper(app):
         for room, d in list(cams.items()):
             stale = [w for w in list(d) if now - seen.get(w, 0) > STALE_SEC]
             for w in stale:
-                d.pop(w, None); rooms.get(room, set()).discard(w); seen.pop(w, None); ws_rtt.pop(w, None)
+                d.pop(w, None); rooms.get(room, set()).discard(w); seen.pop(w, None); ws_rtt.pop(w, None); ios_pending.pop(w, None)
                 tok = ios_token.pop(w, None)
                 if tok and token_ws.get(tok) is w:       # 서버가 끊는 무응답 = 잠든 폰 → 아일랜드 유지 (데모 방은 종료)
                     token_ws.pop(tok, None); apns_live.set_active(tok, False)
@@ -607,7 +663,7 @@ tele_hits: dict = {}   # ip -> [count, window]
 TELE_LIMIT = 60        # IP당 분당
 
 async def telemetry(request):
-    ip = request.headers.get("X-Forwarded-For", request.remote or "?").split(",")[0].strip()[:64]
+    ip = _client_ip(request)
     now = time.time(); h = tele_hits.get(ip)
     if not h or now - h[1] > 60: tele_hits[ip] = [1, now]
     else:
@@ -642,6 +698,8 @@ async def health(request):
 
 async def room_status(request):
     """GET /room?code=XXXX → 그 방에 호스트(브릿지)가 켜져 있는지. 폰 앱은 켜진 방에만 들어간다 (사장님 2026-09-05)."""
+    if not _hit_ok(room_hits, _client_ip(request), ROOM_LOOKUP_LIMIT):   # 방 코드 대입(존재 여부 탐색) 방지 (2026-09-17)
+        return web.json_response({"ok": False, "active": False, "error": "rate"}, status=429)
     code = str(request.query.get("code", ""))[:32].strip().upper()
     if not code or not _ROOM_RE.match(code): return web.json_response({"ok": False, "active": False, "error": "room"}, status=400)
     active = bool(bridges.get(code)) or code == "DEMO"
@@ -741,6 +799,8 @@ async def status(request):
 
 async def ios_activity(request):
     """아이폰 앱이 Live Activity 푸시 토큰을 등록/해제. POST {room, cam, token} / DELETE {token}"""
+    if request.method == "POST" and not _hit_ok(ios_hits, _client_ip(request), IOS_ACTIVITY_LIMIT):   # 토큰 대량 등록 방지 (2026-09-17)
+        return web.json_response({"ok": False, "error": "rate"}, status=429)
     try:
         if request.content_length and request.content_length > 8192: return web.json_response({"ok": False, "error": "size"}, status=413)
         d = await request.json()
@@ -762,7 +822,10 @@ async def _ios_activity(request, d, token, device):
     if not _ROOM_RE.match(room): return web.json_response({"ok": False, "error": "room"}, status=400)
     if apns_live.count(room) >= MAX_IOS_PER_ROOM: return web.json_response({"ok": False, "error": "room_full"}, status=429)
     apns_live.cancel_end(device)                       # 재접속·재등록 = 살아있음
+    if not _push_ok(str(d.get("push") or "").strip().lower()): return web.json_response({"ok": False, "error": "push"}, status=400)
     apns_live.register(room, cam, token, device)
+    w = token_ws.get(token); p = ios_pending.pop(w, None) if w is not None else None
+    if p and ios_token.get(w) == token: _apply_ios(token, p)   # 등록 전에 소켓으로 먼저 온 전면/후면 상태 적용 (아래 본문 값이 우선)
     if "alerts" in d: apns_live.set_alerts(token, bool(d.get("alerts")))
     if d.get("push"): apns_live.set_push(token, str(d["push"]).strip().lower())
     if "banner" in d: apns_live.set_banner(token, bool(d.get("banner")))
