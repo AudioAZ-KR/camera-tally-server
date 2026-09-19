@@ -209,7 +209,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-17.5"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-19.1"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -317,7 +317,39 @@ def roster_rtt(room):
             r[str(cam)] = max(r.get(str(cam), 0), ws_rtt[ws])
     return r
 
+# ===== 애플워치 롱 폴링 =====
+# watchOS 는 웹소켓을 오디오 앱에만 허용(TN3135)해서 워치가 소켓으로 못 붙는다. 일반 HTTP 는 된다.
+# 워치가 GET /watch/tally?room=&v= 로 물으면, 버전이 같을 땐 바뀔 때까지 기다렸다 답한다(최대 20초) — 사실상 실시간.
+# 아이폰 화면이 꺼져 아이폰 앱이 잠들어도 워치가 탈리를 직접 받는다 (사장님 2026-09-19).
+room_ver: dict[str, int] = {}
+room_evt: dict[str, asyncio.Event] = {}
+watch_hits: dict = {}
+WATCH_POLL_LIMIT = 300          # IP당 1분 (롱 폴링이라 보통 분당 몇 번, 탈리가 빠르게 바뀌어도 여유)
+WATCH_WAIT_SEC = 20
+
+def _bump(room):
+    room_ver[room] = room_ver.get(room, 0) + 1
+    ev = room_evt.pop(room, None)
+    if ev: ev.set()
+
+async def watch_tally(request):
+    if not _hit_ok(watch_hits, _client_ip(request), WATCH_POLL_LIMIT):
+        return web.json_response({"ok": False, "error": "rate"}, status=429)
+    code = str(request.query.get("room", ""))[:32].strip().upper()
+    if not code or not _ROOM_RE.match(code): return web.json_response({"ok": False, "error": "room"}, status=400)
+    try: v = int(request.query.get("v", "-1"))
+    except ValueError: v = -1
+    known = code in state or code in bridges                 # 없는 방은 기다리지 않는다(방 코드 대입으로 대기 객체를 쌓지 못하게)
+    if known and v == room_ver.get(code, 0):
+        ev = room_evt.setdefault(code, asyncio.Event())
+        try: await asyncio.wait_for(ev.wait(), WATCH_WAIT_SEC)
+        except asyncio.TimeoutError: pass
+    note = notes.get(code) or {}
+    return web.json_response({"ok": True, "v": room_ver.get(code, 0), **state.get(code, OFFLINE),
+                              "host": bool(bridges.get(code)), "notice": note.get("text", ""), "notice_ts": note.get("ts", 0)})
+
 async def broadcast(room, msg=None):
+    _bump(room)                                                 # 탈리·공지·오프라인 전환이 모두 여기를 지난다 → 워치 롱 폴링 깨우기
     msg = msg or tally_msg(room)
     for ws in list(rooms.get(room, ())):
         try:
@@ -932,6 +964,7 @@ def make_app():
     a.router.add_get("/ws", ws_handler)
     a.router.add_get("/health", health)
     a.router.add_get("/room", room_status)
+    a.router.add_get("/watch/tally", watch_tally)
     a.router.add_get("/status", status)
     a.router.add_post("/telemetry", telemetry)
     a.router.add_post("/ios/activity", ios_activity)
