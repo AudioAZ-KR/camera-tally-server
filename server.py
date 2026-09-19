@@ -209,7 +209,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-19.1"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-19.2"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -346,7 +346,8 @@ async def watch_tally(request):
         except asyncio.TimeoutError: pass
     note = notes.get(code) or {}
     return web.json_response({"ok": True, "v": room_ver.get(code, 0), **state.get(code, OFFLINE),
-                              "host": bool(bridges.get(code)), "notice": note.get("text", ""), "notice_ts": note.get("ts", 0)})
+                              "host": bool(bridges.get(code)) or code == "DEMO",   # DEMO 는 가상 호스트(브릿지 없음)
+                              "notice": note.get("text", ""), "notice_ts": note.get("ts", 0)})
 
 async def broadcast(room, msg=None):
     _bump(room)                                                 # 탈리·공지·오프라인 전환이 모두 여기를 지난다 → 워치 롱 폴링 깨우기
