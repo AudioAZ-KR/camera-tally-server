@@ -354,6 +354,8 @@ async def watch_tally(request):
     if not code or not _ROOM_RE.match(code): return web.json_response({"ok": False, "error": "room"}, status=400)
     try: v = int(request.query.get("v", "-1"))
     except ValueError: v = -1
+    wt = str(request.query.get("wt", "")).strip().lower()[:256]   # 워치 알림 토큰(선택) — 앱이 직접 받는 중이면 알림을 생략(애플 푸시 제한 회피)
+    if wt and _TOKEN_RE.match(wt): apns_live.watch_seen(wt)
     known = code in state or code in bridges                 # 없는 방은 기다리지 않는다(방 코드 대입으로 대기 객체를 쌓지 못하게)
     if known and v == room_ver.get(code, 0):
         ev = room_evt.setdefault(code, asyncio.Event())

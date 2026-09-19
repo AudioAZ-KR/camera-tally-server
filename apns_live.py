@@ -496,10 +496,21 @@ def register_watch(room: str, cam: int, token: str, lang: str = "ko") -> bool:
 
 
 def unregister_watch(token: str):
+    _watch_seen.pop(token, None)
     room = _watch_room.pop(token, None)
     if room:
         _watch.get(room, {}).pop(token, None)
         if not _watch.get(room): _watch.pop(room, None)
+
+
+WATCH_SEEN_SEC = 25            # 워치 앱이 이 시간 안에 롱 폴링했으면 앱이 직접 받는 중 → 알림 생략 (롱 폴링 최대 대기 20초)
+_watch_seen: dict[str, float] = {}
+
+
+def watch_seen(token: str):
+    """워치 앱이 탈리를 직접 받아 가는 중(롱 폴링) — 앱이 스스로 진동하므로 서버 알림은 쉰다. 알림이 잦으면 애플이 늦추거나 버린다."""
+    if token in _watch_room:
+        _watch_seen[token] = time.time()
 
 
 def watch_count(room: str) -> int:
@@ -538,6 +549,7 @@ async def push_watch(room: str, st: dict):
             unregister_watch(token); continue
         s = cam_state(r["cam"], st); ps = r.get("last"); r["last"] = s
         if s == ps: continue
+        if now - _watch_seen.get(token, 0) < WATCH_SEEN_SEC: continue   # 앱이 직접 받는 중
         kind = "pgm" if s == "pgm" else "idle" if (s == "idle" and ps == "pgm") else "pvw" if (s == "pvw" and ps not in ("pvw", "pgm")) else None
         if kind: tasks.append(_send_watch(token, kind, r["cam"], r["lang"]))
     if tasks:
