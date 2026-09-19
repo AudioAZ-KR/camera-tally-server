@@ -11,7 +11,22 @@
 """
 import asyncio, json, os, time
 from aiohttp import web, WSMsgType
-import apns_live   # iOS Live Activity(다이나믹 아일랜드) 푸시
+try:
+    import apns_live   # iOS Live Activity(다이나믹 아일랜드) 푸시
+except Exception as _e:   # 호스트 앱에 내장된 오프라인 서버: APNs 모듈·부품(httpx·PyJWT)이 없다 → 푸시만 빼고 나머지는 그대로
+    print(f"[apns  ] 없음 — 푸시 없이 실행 ({_e!r})", flush=True)
+    class _NoApns:
+        """apns_live 자리 채움: 등록·푸시는 아무것도 안 하고, 조회는 '없음'으로 답한다."""
+        def __getattr__(self, name):
+            if name in ("count",): return lambda *a, **k: 0
+            if name in ("bg_cams",): return lambda *a, **k: set()
+            if name in ("is_registered", "is_sleeping", "treat_close_as_sleep"): return lambda *a, **k: False
+            if name in ("device_of",): return lambda *a, **k: None
+            if name in ("push_room", "end_room"):
+                async def _noop(*a, **k): return None
+                return _noop
+            return lambda *a, **k: None
+    apns_live = _NoApns()
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE, "web")
@@ -209,7 +224,7 @@ async def demo_close(ws, room):
     try: await ws.close()
     except Exception: pass
 RELAY_KEY = os.environ.get("RELAY_KEY", "")   # 새 서버 세대 키. **코드에 넣지 않는다** — Render 환경변수 RELAY_KEY 로만 설정(저장소 공개 안전). 미설정 시 아래 게이트가 원격 브릿지를 모두 거부.
-SERVER_VER = "2026-09-19.2"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
+SERVER_VER = "2026-09-19.3"        # 배포 확인용: /health 가 이 값을 돌려주면 이 코드가 살아있는 것
 STALE_SEC = 25                 # 이 시간 동안 아무 메시지(ping 포함)가 없으면 접속 해제로 간주
 state: dict[str, dict] = {}    # room -> {"program","preview","online"}
 notes: dict[str, dict] = {}    # room -> {"text","ts"}              (공지 메시지)
@@ -442,9 +457,14 @@ async def ws_handler(request):
                         await ws.send_str(json.dumps({"type": "upgrade_required",
                                                       "msg": "This version is no longer supported. Get the latest Flare Tally at audioazpro.com"}))
                         await ws.close(); return ws
-                    lic_ok = await verify_license(str(auth.get("token", "")), str(auth.get("device", "")))
-                    mode = "licensed" if lic_ok else "demo"
                     device = str(auth.get("device") or auth.get("demo") or ("ip-" + ip))[:64]
+                    if local_srv:
+                        # 호스트 앱에 내장된 오프라인 서버: 라이선스·데모 검사는 호스트 앱이 이미 한다. 여기서 또 온라인 확인을 하면
+                        # 인터넷 없는 현장에서 정식 사용자까지 막힌다(증빙 7일 경과 시) → 건너뛴다 (2026-09-19, 사장님 맥 안에서 도는 서버라 보안 이득도 없음)
+                        lic_ok, mode, left, dst = True, "licensed", 1, None
+                    else:
+                        lic_ok = await verify_license(str(auth.get("token", "")), str(auth.get("device", "")))
+                        mode = "licensed" if lic_ok else "demo"
                     lp = auth.get("license_proof")
                     if mode == "demo" and isinstance(lp, dict) and license_proof_state(lp, device):
                         mode = "licensed"                                # 세션이 끊겨도 서명된 라이선스 증빙이면 정식
