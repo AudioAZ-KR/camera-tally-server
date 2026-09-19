@@ -18,11 +18,11 @@ except Exception as _e:   # 호스트 앱에 내장된 오프라인 서버: APNs
     class _NoApns:
         """apns_live 자리 채움: 등록·푸시는 아무것도 안 하고, 조회는 '없음'으로 답한다."""
         def __getattr__(self, name):
-            if name in ("count",): return lambda *a, **k: 0
+            if name in ("count", "watch_count"): return lambda *a, **k: 0
             if name in ("bg_cams",): return lambda *a, **k: set()
             if name in ("is_registered", "is_sleeping", "treat_close_as_sleep"): return lambda *a, **k: False
             if name in ("device_of",): return lambda *a, **k: None
-            if name in ("push_room", "end_room"):
+            if name in ("push_room", "end_room", "push_watch"):
                 async def _noop(*a, **k): return None
                 return _noop
             return lambda *a, **k: None
@@ -533,6 +533,7 @@ async def ws_handler(request):
                 print(f"[{room}] PGM={pgm_list or state[room]['program']} PVW={pvw_list or state[room]['preview']}", flush=True)
                 await broadcast(room)
                 asyncio.create_task(apns_live.push_room(room, state[room], notes.get(room), timers.get(room)))
+                asyncio.create_task(apns_live.push_watch(room, state[room]))
             elif t == "msg" and (is_bridge or is_cueop) and room:
                 text = str(data.get("text", ""))[:200]
                 notes[room] = {"text": text, "ts": now_ms()}
@@ -753,6 +754,7 @@ async def demo_host(app):
             await broadcast(room, msg_msg(room))
         await broadcast(room)
         asyncio.create_task(apns_live.push_room(room, state[room], notes.get(room), timers.get(room)))
+        asyncio.create_task(apns_live.push_watch(room, state[room]))
 
 async def start_bg(app):
     app["reaper"] = asyncio.create_task(reaper(app))
@@ -919,6 +921,30 @@ async def status(request):
     regions.sort(key=lambda x: order.get(x.get("L"), 99))
     return web.json_response({"ok": True, "all": True, "self": me.get("L"), "ver": SERVER_VER, "now": now_ms(), "regions": regions})
 
+async def watch_push(request):
+    """애플워치 앱이 자기 알림 토큰을 등록/해제. POST {room, cam, token, lang, on} → {ok, push(서버가 알림을 보낼 수 있음), live(방에 호스트가 붙어 있음)}
+    (2026-09-19) 옛 앱·옛 호스트와 무관한 새 경로 — 기존 /ws·/room·/ios/activity 동작은 그대로."""
+    if not _hit_ok(ios_hits, _client_ip(request), IOS_ACTIVITY_LIMIT):
+        return web.json_response({"ok": False, "error": "rate"}, status=429)
+    try:
+        if request.content_length and request.content_length > 4096: return web.json_response({"ok": False, "error": "size"}, status=413)
+        d = await request.json()
+        if not isinstance(d, dict): raise ValueError("shape")
+        token = str(d.get("token", "")).strip().lower()[:256]
+        if not _TOKEN_RE.match(token): return web.json_response({"ok": False, "error": "token"}, status=400)
+        if d.get("on") is False:
+            apns_live.unregister_watch(token); return web.json_response({"ok": True})
+        room = str(d.get("room", ""))[:32].strip().upper()
+        cam = _i(d.get("cam"), 0, 0, 99)
+        if not room or not _ROOM_RE.match(room) or cam < 1: return web.json_response({"ok": False, "error": "room"}, status=400)
+        if not apns_live.register_watch(room, cam, token, str(d.get("lang") or "ko")[:5]):
+            return web.json_response({"ok": False, "error": "room_full"}, status=429)
+        return web.json_response({"ok": True, "push": bool(getattr(apns_live, "ENABLED", False)),
+                                  "live": bool(bridges.get(room)) or room == "DEMO"})
+    except Exception as e:
+        print(f"[watch ] bad request {e!r}", flush=True)
+        return web.json_response({"ok": False, "error": "bad_request"}, status=400)
+
 async def ios_activity(request):
     """아이폰 앱이 Live Activity 푸시 토큰을 등록/해제. POST {room, cam, token} / DELETE {token}"""
     if request.method == "POST" and not _hit_ok(ios_hits, _client_ip(request), IOS_ACTIVITY_LIMIT):   # 토큰 대량 등록 방지 (2026-09-17)
@@ -986,6 +1012,7 @@ def make_app():
     a.router.add_get("/health", health)
     a.router.add_get("/room", room_status)
     a.router.add_get("/watch/tally", watch_tally)
+    a.router.add_post("/watch/push", watch_push)
     a.router.add_get("/status", status)
     a.router.add_post("/telemetry", telemetry)
     a.router.add_post("/ios/activity", ios_activity)

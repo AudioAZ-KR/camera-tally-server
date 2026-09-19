@@ -471,6 +471,80 @@ async def push_room(room: str, st: dict, note: dict | None = None, timer: dict |
         print(f"[apns] send error: {e!r}", flush=True)
 
 
+# ---- 애플워치 직접 알림 (2026-09-19 사장님: "안 보고 있어도 진동") ----
+# 워치 앱이 자기 알림 토큰을 등록하면, 카메라가 온에어/프리뷰/해제로 바뀔 때 서버가 워치로 직접 알림을 쏜다.
+# 워치 앱이 잠들었거나 꺼져 있어도, 아이폰 상태와 무관하게 손목에 진동이 온다. 워치 앱이 화면에 떠 있으면 앱이 알림을 조용히 받고 스스로 진동한다.
+WATCH_BUNDLE_ID = os.environ.get("APNS_WATCH_BUNDLE_ID", BUNDLE_ID + ".watchkitapp")
+WATCH_TTL = 24 * 3600          # 워치가 24시간 동안 다시 등록하지 않으면 잊는다(앱을 켤 때마다 재등록)
+WATCH_MAX_PER_ROOM = 64
+_watch: dict[str, dict[str, dict]] = {}   # room -> watch token -> {cam, lang, at, last}
+_watch_room: dict[str, str] = {}          # watch token -> room
+
+
+def register_watch(room: str, cam: int, token: str, lang: str = "ko") -> bool:
+    old = _watch_room.get(token)
+    if old and old != room:
+        _watch.get(old, {}).pop(token, None)
+    regs = _watch.setdefault(room, {})
+    if token not in regs and len(regs) >= WATCH_MAX_PER_ROOM:
+        return False
+    prev = regs.get(token) or {}
+    regs[token] = {"cam": cam, "lang": lang if lang in _MSG else "ko", "at": time.time(),
+                   "last": prev.get("last") if prev.get("cam") == cam else None}
+    _watch_room[token] = room
+    return True
+
+
+def unregister_watch(token: str):
+    room = _watch_room.pop(token, None)
+    if room:
+        _watch.get(room, {}).pop(token, None)
+        if not _watch.get(room): _watch.pop(room, None)
+
+
+def watch_count(room: str) -> int:
+    return len(_watch.get(room, {}))
+
+
+async def _send_watch(token: str, kind: str, cam: int, lang: str):
+    global _client
+    import httpx
+    if _client is None:
+        _client = httpx.AsyncClient(http2=True, timeout=10)
+    t, b = _MSG.get(lang, _MSG["ko"])[kind]
+    headers = {"authorization": f"bearer {_jwt()}", "apns-topic": WATCH_BUNDLE_ID, "apns-push-type": "alert",
+               "apns-priority": "10", "apns-expiration": "0", "apns-collapse-id": f"wtally-{cam}"}   # 늦게 도착한 탈리는 해롭다 → 즉시 못 주면 버림, 같은 카메라 알림은 하나로 겹침
+    payload = {"aps": {"alert": {"title": t.format(cam=cam), "body": b}, "sound": "default"}, "tally": {"state": kind, "cam": cam}}
+    first = _env_of.get(token) or ENV
+    for env in [first] + [e for e in HOSTS if e != first]:
+        r = await _client.post(f"{HOSTS[env]}/3/device/{token}", headers=headers, content=json.dumps(payload))
+        print(f"[apns] watch {r.status_code} {env} {kind} cam={cam}", flush=True)
+        if r.status_code == 200:
+            _env_of[token] = env; return
+        if r.status_code == 400 and b"BadDeviceToken" in r.content: continue
+        if r.status_code == 410: unregister_watch(token)
+        return
+    unregister_watch(token)
+
+
+async def push_watch(room: str, st: dict):
+    """방에 등록된 워치들에 상태 변화 알림 (온에어 진입·프리뷰 진입·온에어 해제만 — 아이폰 알림 규칙과 같다)"""
+    regs = _watch.get(room)
+    if not ENABLED or not regs:
+        return
+    now = time.time(); tasks = []
+    for token, r in list(regs.items()):
+        if now - r["at"] > WATCH_TTL:
+            unregister_watch(token); continue
+        s = cam_state(r["cam"], st); ps = r.get("last"); r["last"] = s
+        if s == ps: continue
+        kind = "pgm" if s == "pgm" else "idle" if (s == "idle" and ps == "pgm") else "pvw" if (s == "pvw" and ps not in ("pvw", "pgm")) else None
+        if kind: tasks.append(_send_watch(token, kind, r["cam"], r["lang"]))
+    if tasks:
+        try: await asyncio.gather(*tasks)
+        except Exception as e: print(f"[apns] watch send error: {e!r}", flush=True)
+
+
 async def _end_room_immediate_legacy(room: str):
     """(2026-09-03 옛 판) 호스트가 탈리를 끝내면 활동도 종료 표시.
     2026-09-17: 같은 이름의 end_room(2026-09-06, 기기별 종료 예약)을 파일 아래에서 덮어써서
