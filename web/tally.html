@@ -26,7 +26,7 @@
 
   /* ===== 탈리 화면: 위 50% 탈리 / 아래 50% 정보 ===== */
   #tally { display: none; height: 100%; flex-direction: column; }
-  #light { flex: 0 0 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;
+  #light { flex: 1 0 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;
            padding-top: env(safe-area-inset-top); transition: background .1s; }
   #tally.idle #light { background: var(--tally-idle); }
   #tally.pvw  #light { background: var(--tally-pvw); }
@@ -40,11 +40,12 @@
   #tally.idle .pgmpvw .s, #tally.off .pgmpvw .s, #tally.mode-border .pgmpvw .s { color: var(--tally-pgm); }
   #tally.idle .pgmpvw .w, #tally.off .pgmpvw .w, #tally.mode-border .pgmpvw .w { color: var(--tally-pvw); }
 
-  #panel { flex: 0 0 50%; background: var(--bg); border-top: 1px solid var(--border); display: flex; flex-direction: column; padding: 12px 14px calc(env(safe-area-inset-bottom) + 10px); gap: 10px; overflow: hidden; }
+  #panel { flex: 0 1 auto; max-height: 50%; background: var(--bg); border-top: 1px solid var(--border); display: flex; flex-direction: column; padding: 12px 14px calc(env(safe-area-inset-bottom) + 10px); gap: 10px; overflow: hidden; }
   .clock { text-align: center; }
   .clock small { display: block; font-size: 11px; color: var(--muted); }
   .clock b { font-family: var(--mono); font-size: min(9vh, 17vw); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.05; letter-spacing: .02em; }
   .row2 { display: flex; gap: 10px; }
+  .row2:has(> .tile.empty + .tile.empty) { display: none; }   /* 목표 시각·타이머 둘 다 미설정이면 칸을 숨겨 탈리를 크게 */
   .tile { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; text-align: center; min-height: 64px; }
   .tile small { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
   .tile b { font-family: var(--mono); font-size: min(5vh, 9.5vw); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
@@ -56,6 +57,7 @@
   #msg small { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
   #msg .t { font-size: min(3.6vh, 6vw); font-weight: 700; line-height: 1.3; word-break: keep-all; white-space: pre-wrap; }
   #msg.empty .t { color: var(--muted); font-weight: 400; font-size: 3vh; }
+  #msg.empty { flex: 0 0 auto; }                               /* 공지 없으면 한 줄만 */
   #msg.new { animation: pop .5s ease; }
   /* 공지가 칸을 넘치면 한 줄로 이어 붙여 흐르게 (앱과 같은 동작, 2026-09-17).
      예전엔 칸 안 스크롤만 돼서 작은 화면·아이패드 작은 창에서 첫 줄만 보이고 나머지가 표시 없이 가려졌다. */
@@ -76,9 +78,10 @@
                  animation: notice-marq var(--marq-dur, 12s) linear .8s infinite; }
   @keyframes notice-marq { from { transform: translateX(0); } to { transform: translateX(var(--marq-shift, -50%)); } }
   @keyframes pop { 0% { background: var(--raised); } 100% { background: var(--surface); } }
-  .foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
-  .foot > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .foot > span:last-child { display: flex; gap: 6px; flex: none; }
+  .foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 8px; font-size: 12px; color: var(--muted); }
+  /* 상태 줄(방·연결·온/오프라인·지연시간)은 버튼과 한 줄에 두면 잘려 지연시간이 안 보였다(사장님 2026-09-19) → 버튼 위 한 줄 전체 */
+  .foot > span:first-child { flex: 1 0 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .foot > span:last-child { display: flex; gap: 6px; flex: none; margin-left: auto; }
   .foot img { height: 14px; opacity: .8; vertical-align: middle; margin-right: 6px; }
   .foot button { background: none; border: 1px solid var(--border); color: var(--muted); padding: 4px 10px; border-radius: 6px; font-size: 12px; }
 
@@ -103,7 +106,7 @@
     #light .cam { font-size: min(52vh, 22vw); }
     #light .status { font-size: min(11vh, 4.5vw); }
     #light .pgmpvw { top: 8px; }
-    #panel { flex: 0 0 50%; height: 100%; border-top: 0; border-left: 1px solid var(--border);
+    #panel { flex: 0 0 50%; height: 100%; max-height: none; border-top: 0; border-left: 1px solid var(--border);
              padding: 8px 12px 8px 12px; padding-right: calc(env(safe-area-inset-right) + 10px); gap: 6px; }
     .clock b { font-size: min(13vh, 6vw); }
     .clock small { font-size: 9px; }
@@ -136,7 +139,7 @@
 <div id="tally" class="off">
   <div id="frame"></div>
   <div id="light">
-    <div class="pgmpvw"><span class="w"><span id="lblWait">대기</span> <b id="pvwNo">—</b></span> &nbsp;·&nbsp; <span class="s"><span id="lblSend">송출</span> <b id="pgmNo">—</b></span></div>
+    <div class="pgmpvw"><span class="w"><span id="lblWait">PVW</span> <b id="pvwNo">—</b></span> &nbsp;·&nbsp; <span class="s"><span id="lblSend">PGM</span> <b id="pgmNo">—</b></span></div>
     <div class="cam" id="myCam">1</div>
     <div class="status" id="status">연결 중</div>
   </div>
@@ -159,7 +162,7 @@ const qs = new URLSearchParams(location.search);
 const LANGS = [['en','English'],['ko','한국어'],['ja','日本語'],['zh','中文'],['es','Español'],['fr','Français'],['de','Deutsch'],['it','Italiano']];
 const I18N = {
   ko: { title:'Flare Tally', room:'방 코드', cam:'내 카메라 번호', connect:'접속', openApp:'앱으로 열기',
-        send:'송출', wait:'대기', connecting:'연결 중', onair:'ON AIR', preview:'PREVIEW', standby:'대기',
+        send:'PGM', wait:'PVW', connecting:'연결 중', onair:'ON AIR', preview:'PREVIEW', standby:'대기',
         disconnected:'연결 끊김', atemOff:'스위처 오프라인', hostOff:'호스트 오프라인', reconnecting:'재연결 중…',
         clock:'현재 시각', targetTime:'목표 시각', timer:'타이머', timerOver:'타이머 초과', unset:'미설정',
         notice:'공지', noNotice:'공지 없음', connServer:'서버 연결 중…',
@@ -277,8 +280,15 @@ $('styleToggle').onclick = () => setStyle(dispStyle === 'border' ? 'full' : 'bor
 function renderConn() {
   if (connMode === null) { $('conn').textContent = t('connServer'); return; }
   const modeTxt = connMode === 'online' ? t('onlineWord') : t('offlineWord');
-  const ping = lastRtt > 0 ? ` · ${lastRtt}ms` : '';
-  $('conn').textContent = `${t('roomWord')} ${room} · ${t('connectedWord')} · ${modeTxt}${ping}`;
+  const el = $('conn');
+  el.textContent = `${t('roomWord')} ${room} · ${t('connectedWord')} · ${modeTxt}`;   // 방 코드는 사용자 입력 → 글자로만(innerHTML 금지)
+  if (lastRtt > 0) {
+    // 지연시간 색: 300ms 까지 초록, 500ms 까지 주황, 넘으면 빨강 (사장님 2026-09-19 — 아이폰·워치·호스트와 같은 기준)
+    const ms = document.createElement('span');
+    ms.textContent = ` · ${lastRtt}ms`;
+    ms.style.color = lastRtt <= 300 ? 'var(--tally-pvw)' : lastRtt <= 500 ? '#FF8A00' : 'var(--tally-pgm)';
+    el.appendChild(ms);
+  }
 }
 
 $('go').onclick = () => {
